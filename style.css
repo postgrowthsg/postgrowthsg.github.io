@@ -191,6 +191,13 @@ h1 {
 .about-page p { margin: 0; line-height: 1.7; }
 .about-page a { color: var(--ink); }
 @media (max-width: 760px) { .head .nav { justify-self: start; padding-top: 0; } }
+
+/* Footer snail on every page (snail.js): crawls at roughly real snail speed, leaving a dotted trail */
+.snail-foot { margin-top: 32px; display: grid; gap: 8px; }
+.snail-track { position: relative; height: 58px; border-bottom: 1px solid var(--rule); overflow: hidden; }
+.snail-slime { position: absolute; left: 0; bottom: 0; height: 5px; width: 0; background-image: radial-gradient(circle, var(--trail) 1.2px, transparent 1.6px); background-size: 9px 5px; background-repeat: repeat-x; }
+.snail { position: absolute; left: 0; bottom: 1px; width: 50px; height: 52px; background: url(logo.png) no-repeat 0 0 / 101px 52px; will-change: transform; }
+.snail-read { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
   .legend { font-size: 12px; gap: 4px 12px; }
   .wrap { gap: 16px; }

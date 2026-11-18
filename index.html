@@ -410,7 +410,7 @@ function labelFor(gLab, x, y, name, metaText, moreText, onOpen, aria) {
 }
 // Where the chip sits (its centre) and the area dots keep clear of (chip + count line).
 // metaLen = characters in the count line under the chip; it can be wider than the chip itself.
-const chipSpot = (x, y, name, metaLen = 0) => ({ x, y: y + 8, a: Math.max(chipW(name) / 2 + 4, metaLen * 3.9 + 8), b: 30 });
+const chipSpot = (x, y, name, metaLen = 0) => ({ x, y: y + 8, a: Math.max(chipW(name) / 2 + 4, metaLen * 4.3 + 8), b: 30 });
 // One glow per theme, centred on its chip. It shows density, not extent:
 // a little larger and much darker the more items the theme holds.
 function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1, dim = 1) {

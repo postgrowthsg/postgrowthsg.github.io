@@ -303,3 +303,16 @@ h1 {
 
 /* v3: no one-word last lines in running text */
 p, li, .note, .cardnote { text-wrap: pretty; }
+
+/* The first screen (critique, 18 Nov): Questions start folded at every width, and on phones the order is
+   logo + heading, switch, Questions, then the legend and counts, then the search directly above the map.
+   (The header's wrappers dissolve so the pieces can be ordered; About moves to the top right, as on a laptop.) */
+@media (max-width: 760px) {
+  .wrap { position: relative; }
+  header.head-home, .head-home .right, .head-home .side { display: contents; }
+  .head-home .left { order: -5; }
+  .head-home .nav { order: -4; position: absolute; top: 24px; right: 0; padding-top: 0; }
+  .head-home .faq { order: -3; }
+  .bar { order: -2; }
+  .head-home .find { order: -1; }
+}

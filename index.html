@@ -522,19 +522,22 @@ function renderInside(model, key) {
 }
 
 // ---- Efforts: inside a big theme, grouped by Collage card ----
+// Every card of the theme shows, in the Cards tab's order, even with no efforts yet (they're faint, "0 efforts", with their description).
+// Each effort sits under the first of its cards that belongs to this theme. Efforts with no card are in Still growing, under "No card yet".
+let noteTimer = 0;
 function renderInsideEfforts(model, key) {
   const c = model.clusters.get(key);
   const { W } = size();
-  const byCard = new Map();   // each effort sits under the first of its cards that belongs to this theme
+  const cardsHere = key === GROWING ? [] : [...CARDS.values()].filter(cd => cd.big === key);
+  const byCard = new Map(cardsHere.map(cd => [cd.name, { key: cd.name, card: cd.name, members: [] }]));
   c.members.forEach(it => {
-    const name = it.cards.find(n => (CARDS.get(cardKey(n)) || {}).big === key) || '';
-    const label = name || 'No card yet';
-    if (!byCard.has(label)) byCard.set(label, { key: label, card: name, members: [] });
-    byCard.get(label).members.push(it);
+    const name = it.cards.find(n => byCard.has(n));
+    if (name) byCard.get(name).members.push(it);
+    else { if (!byCard.has('No card yet')) byCard.set('No card yet', { key: 'No card yet', card: '', members: [] }); byCard.get('No card yet').members.push(it); }
   });
-  const groups = [...byCard.values()];
+  const groups = [...byCard.values()].sort((a, b) => b.members.length - a.members.length);   // cards with efforts at the heart; ties keep the Cards tab's order
   groups.forEach(g => { g.R = Math.max(chipW(g.key) / 2 + 14, 30 + 17 * Math.sqrt(g.members.length)); });
-  let H = Math.max(460, Math.min(720, 280 + 60 * Math.sqrt(c.total)));
+  let H = Math.min(860, Math.max(460, 260 + 78 * groups.length, 280 + 60 * Math.sqrt(c.total)));
   if (!groups.length) H = 40;
   else if (isPhone(W)) { groups.forEach(g => { g.R = 36 + 13 * Math.sqrt(g.members.length); }); H = trailLayout(groups, W); }
   else spiralLayout(groups, W, H, 70);
@@ -542,30 +545,38 @@ function renderInsideEfforts(model, key) {
   groups.forEach(g => g.members.forEach(it => nodes.push({ item: it, g, r: 7.5, tx: g.cx, ty: g.cy, spread: g.r })));
   if (nodes.length) scatter(nodes, W, H, 5, groups.map(g => chipSpot(g.cx, g.cy, g.key)));
 
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', `${key}: efforts grouped by Collage card`);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', `${key}: its Collage cards, with the efforts under each`);
   defsFor(svg, [['g', HEAT, 1]]);
   const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
   const gNodes = svg.append('g'), gLab = svg.append('g');
   const maxGroup = d3.max(groups, g => g.members.length);
   groups.forEach(g => {
+    const n = g.members.length, empty = n === 0;
     const hits = state.match ? g.members.filter(it => state.match.has(it.id)).length : null;
-    densityGlow(gGlow, g.cx, g.cy, g.key, g.members.length, maxGroup, null, d3.min(groups, k => k.members.length), hits === 0 ? 0.25 : 1);
-    labelFor(gLab, g.cx, g.cy, g.key, hits === null ? `${g.members.length} ${g.members.length === 1 ? 'effort' : 'efforts'}` : `${hits} of ${g.members.length}`, '', null, '').classed('zero', hits === 0);
+    densityGlow(gGlow, g.cx, g.cy, g.key, n, maxGroup, null, d3.min(groups, k => k.members.length), hits === 0 ? 0.25 : 1);
+    const note = () => {
+      showNote('<b>No efforts yet</b><small>To suggest one for this card, message an organiser on Telegram or email postgrowthsg@gmail.com.</small>', g.cx, g.cy - 16);
+      clearTimeout(noteTimer); noteTimer = setTimeout(hideTip, 5000);
+    };
+    const lab = labelFor(gLab, g.cx, g.cy, g.key, hits === null ? `${n} ${n === 1 ? 'effort' : 'efforts'}` : `${hits} of ${n}`, '', empty ? note : null, empty ? `${g.key}: no efforts yet` : '');
+    lab.classed('zero', hits === 0).classed('empty', empty);
+    if (empty) lab.on('mouseleave blur', hideTip);
   });
   nodeGroup(gNodes, nodes, true, key);
   mount(svg);
 
-  $('crumb').innerHTML = `<button class="back" id="back">← all themes</button><h2>${esc(key)}</h2>`;
+  $('crumb').innerHTML = `<button class="back" id="back">← all themes</button><h2>${esc(key)}</h2><span class="counts">${c.total} ${c.total === 1 ? 'effort' : 'efforts'}${cardsHere.length ? ` · ${cardsHere.length} cards` : ''}</span>`;
   $('back').onclick = () => go(null);
   $('list').innerHTML = groups.length ? groups.map(g => {
     const cd = g.card ? CARDS.get(cardKey(g.card)) : null;
-    return `<section><h3>${shapeSvg('effort', 'var(--ink)', 6)}${esc(g.key)}</h3>${cd && cd.desc ? `<p class="cardnote">${esc(cd.desc)}</p>` : ''}<ul>${
+    const more = cd && /^https?:\/\//i.test(cd.link) ? `<p class="cardnote"><a href="${esc(cd.link)}" target="_blank" rel="noopener">More ↗</a></p>` : '';
+    return `<section><h3>${shapeSvg('effort', 'var(--ink)', 6)}${esc(g.key)}</h3>${cd && cd.desc ? `<p class="cardnote">${esc(cd.desc)}</p>` : ''}${more}${g.members.length ? `<ul>${
       g.members.map(it => `<li${state.match && !state.match.has(it.id) ? ' class="miss"' : ''}><button data-id="${esc(it.id)}"><span class="t">${esc(it.title)}</span><span class="d">${esc(it.country || '–')}</span></button></li>`).join('')
-    }</ul></section>`;
-  }).join('') : '<p class="note">Nothing here yet. Efforts are added by the core team: to suggest one, message an organiser on Telegram or email postgrowthsg@gmail.com.</p>';
+    }</ul>` : '<p class="note">No efforts yet.</p>'}</section>`;
+  }).join('') : '<p class="note">Nothing here yet.</p>';
   $('list').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => openPanel(model.list.find(it => it.id === b.dataset.id)));
   const bridges = c.members.filter(it => it.keys.length > 1).length;
-  $('foot').innerHTML = bridges ? `${bridges} effort${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '';
+  $('foot').innerHTML = [bridges ? `${bridges} effort${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '', 'Efforts are added by the core team. To suggest one, message an organiser on Telegram or email postgrowthsg@gmail.com.'].filter(Boolean).join(' ');
 }
 
 function openEffortPanel(it) {

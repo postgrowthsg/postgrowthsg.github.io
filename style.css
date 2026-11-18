@@ -274,3 +274,7 @@ h1 {
 .try button { background: none; border: 0; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .try button:hover { color: var(--ink); }
 .find.typing .try { display: none; }
+
+/* v2: a Collage card with no efforts yet is a muted chip with a dashed outline */
+.clabel.empty .pill { stroke: var(--muted); stroke-dasharray: 4 3; }
+.clabel.empty .name { fill: var(--muted); }

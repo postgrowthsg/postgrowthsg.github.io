@@ -23,6 +23,10 @@
     <div class="left">
     <img class="logo" src="logo.png" alt="Post-Growth SG">
     <h1>What we’ve been reading, watching &amp; sharing</h1>
+    <div class="modes" id="modes" role="group" aria-label="Show" hidden>
+      <button type="button" id="mode-resources" aria-pressed="true">Resources</button>
+      <button type="button" id="mode-efforts" aria-pressed="false">Efforts</button>
+    </div>
     </div>
     <div class="right">
       <nav class="nav" aria-label="Pages"><a href="about.html">About</a></nav>
@@ -89,6 +93,7 @@ const TYPES = [
   { key: 'zine',      label: 'Zine / own writing', plural: 'Zines & own writing' },
 ];
 const TYPE = Object.fromEntries(TYPES.map(t => [t.key, t]));
+const typeInfo = it => it.kind === 'effort' ? { key: 'effort', label: 'Effort', plural: 'Efforts' } : TYPE[it.type];
 // One green for all the heat. Each theme gets its own ink for its dots and label; the kind of resource is shown by shape.
 const HEAT = '196,226,160';
 const symbolHexagon = { draw(ctx, size) { const r = Math.sqrt(size / 2.598); for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 2; i ? ctx.lineTo(r * Math.cos(a), r * Math.sin(a)) : ctx.moveTo(r * Math.cos(a), r * Math.sin(a)); } ctx.closePath(); } };
@@ -152,12 +157,65 @@ async function load() {
   return false;
 }
 
+// ---- Efforts: organisations, groups and campaigns, sorted by the PGS Collage ----
+const BIGS = ['labour', 'extraction', 'production', 'markets', 'finance'];   // the Collage's five big themes
+// Published CSV addresses of the Efforts and Cards tabs (Sheet → File → Share → Publish to web → the tab → CSV).
+// If these can't be reached (or are blank), the site uses the backup copies kept with it.
+const EFFORTS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTzIbhLTJPj7sAuq1RNN_INRjyl5TQtFgth3ZgAOQiG3rDxiROYVJZe8par7xmx3pibW1hlXBF0DbhP/pub?gid=865952608&single=true&output=csv';
+const CARDS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTzIbhLTJPj7sAuq1RNN_INRjyl5TQtFgth3ZgAOQiG3rDxiROYVJZe8par7xmx3pibW1hlXBF0DbhP/pub?gid=1945148730&single=true&output=csv';
+const EFFORTS_SNAPSHOT = 'data/efforts.csv';
+const CARDS_SNAPSHOT = 'data/cards.csv';
+let EFFORTS = [], CARDS = new Map(), EFFORTS_READY = false;
+const cardKey = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+async function fetchRows(urls) {
+  for (const url of urls.filter(Boolean)) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const rows = parseCSV(await res.text());
+      if (rows.length) return rows;
+    } catch (e) { /* try the next source */ }
+  }
+  return null;
+}
+function sheetRows(rows, names) {   // rows -> objects keyed by lowercase column name
+  const [head, ...body] = rows;
+  const at = Object.fromEntries(names.map(n => [n, head.findIndex(h => h.trim().toLowerCase() === n)]));
+  return body.map(r => Object.fromEntries(names.map(n => [n, at[n] >= 0 ? String(r[at[n]] || '').trim() : ''])));
+}
+function toCards(rows) {
+  const map = new Map();
+  sheetRows(rows, ['card', 'big theme', 'description', 'link']).filter(r => r.card).forEach(r => {
+    const big = r['big theme'].toLowerCase();
+    map.set(cardKey(r.card), { name: r.card, big: BIGS.includes(big) ? big : '', desc: r.description, link: r.link });
+  });
+  return map;
+}
+/** Efforts tab -> efforts. Only live rows with a name. An effort sits in the big theme of each of its cards (at most two); no card = Still growing. */
+function toEfforts(rows) {
+  return sheetRows(rows, ['id', 'status', 'name', 'link', 'card 1', 'card 2', 'country', 'description', 'extra links', 'date added'])
+    .filter(r => r.status.toLowerCase() === 'live' && r.name).map(r => {
+      const cards = [...new Set([r['card 1'], r['card 2']].filter(Boolean).map(n => (CARDS.get(cardKey(n)) || { name: n }).name))];
+      const bigs = [...new Set(cards.map(n => (CARDS.get(cardKey(n)) || {}).big).filter(Boolean))].slice(0, 2);
+      return { kind: 'effort', type: 'effort', id: 'e:' + (r.id || slug(r.name)), title: r.name, link: /^https?:/i.test(r.link) ? r.link : '', cards,
+        keys: bigs.length ? bigs : [GROWING], country: r.country, desc: r.description, added: r['date added'],
+        extraLinks: r['extra links'].split(/[\n,]+/).map(x => x.trim()).filter(x => /^https?:\/\//i.test(x)) };
+    });
+}
+async function loadEfforts() {
+  const [cardRows, effortRows] = await Promise.all([fetchRows([CARDS_CSV_URL, CARDS_SNAPSHOT]), fetchRows([EFFORTS_CSV_URL, EFFORTS_SNAPSHOT])]);
+  if (!cardRows || !effortRows) return false;
+  CARDS = toCards(cardRows); EFFORTS = toEfforts(effortRows); EFFORTS_READY = true;
+  return true;
+}
+
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 
 const GROWING = 'Still growing';
 const MAX_CLUSTERS = 8;
-const state = { view: null, cap: 10, sel: null, q: '', match: null };
+const state = { view: null, cap: 10, sel: null, q: '', match: null, mode: 'resources' };
 const $ = id => document.getElementById(id);
 const slug = s => s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const fmtDate = d => {
@@ -190,6 +248,17 @@ function buildModel(list, cap, match) {
   });
   const visible = new Set();
   // While searching, matches come first, so a match isn’t hidden behind “+N more” when it could be shown.
+  clusters.forEach(c => { c.members.sort(match ? (a, b) => (match.has(b.id) - match.has(a.id)) || byRecent(a, b) : byRecent); c.members.slice(0, cap).forEach(it => visible.add(it)); });
+  clusters.forEach(c => { c.hidden = c.members.filter(it => !visible.has(it)).length; c.total = c.members.length; });
+  return { clusters, visible, list };
+}
+
+// Efforts view: the five Collage themes always show, even when empty; Still growing appears only for efforts with no card yet.
+function buildEffortModel(list, cap, match) {
+  const clusters = new Map(BIGS.map(k => [k, { key: k, members: [], folded: null, col: 'var(--ink)' }]));
+  if (list.some(it => it.keys[0] === GROWING)) clusters.set(GROWING, { key: GROWING, members: [], folded: null, col: 'var(--c-growing)' });
+  list.forEach(it => it.keys.forEach(k => clusters.get(k).members.push(it)));
+  const visible = new Set();
   clusters.forEach(c => { c.members.sort(match ? (a, b) => (match.has(b.id) - match.has(a.id)) || byRecent(a, b) : byRecent); c.members.slice(0, cap).forEach(it => visible.add(it)); });
   clusters.forEach(c => { c.hidden = c.members.filter(it => !visible.has(it)).length; c.total = c.members.length; });
   return { clusters, visible, list };
@@ -294,7 +363,7 @@ function nodeGroup(sel, data, markBridges, inside) {
     .attr('transform', d => `translate(${d.x},${d.y})`)
     .attr('opacity', d => state.match && !state.match.has(d.item.id) ? 0.15 : 1)
     .attr('tabindex', 0).attr('role', 'button')
-    .attr('aria-label', d => `${d.item.title}, ${TYPE[d.item.type].label}`)
+    .attr('aria-label', d => `${d.item.title}, ${typeInfo(d.item).label}`)
     .on('click', (e, d) => openPanel(d.item))
     .on('keydown', (e, d) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPanel(d.item); } })
     .on('mouseenter focus', (e, d) => showTip(d))
@@ -325,11 +394,12 @@ function labelFor(gLab, x, y, name, metaText, moreText, onOpen, aria) {
   return lab;
 }
 // Where the chip sits (its centre) and the area dots keep clear of (chip + count line).
-const chipSpot = (x, y, name) => ({ x, y: y + 8, a: chipW(name) / 2 + 4, b: 30 });
+// metaLen = characters in the count line under the chip; it can be wider than the chip itself.
+const chipSpot = (x, y, name, metaLen = 0) => ({ x, y: y + 8, a: Math.max(chipW(name) / 2 + 4, metaLen * 3.9 + 8), b: 30 });
 // One glow per theme, centred on its chip. It shows density, not extent:
 // a little larger and much darker the more items the theme holds.
 function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1, dim = 1) {
-  const t = maxCount > minCount ? (count - minCount) / (maxCount - minCount) : 1;   // 0 = fewest, 1 = most
+  const t = maxCount > minCount ? (count - minCount) / (maxCount - minCount) : (count > 0 ? 1 : 0);   // 0 = fewest (or none), 1 = most
   const r = 66 + 17 * Math.sqrt(count);                        // size follows item count only
   const a = (0.18 + 0.77 * t) * dim;                           // faint wash -> deep green (dimmed when a search finds nothing here)
   gGlow.append('circle').attr('cx', x).attr('cy', y).attr('r', r).attr('fill', 'url(#g)').attr('fill-opacity', a);
@@ -339,6 +409,7 @@ function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1, dim 
 
 // ---- Top level: one glow per theme along the snail spiral ----
 function renderTop(model) {
+  const unit = state.mode === 'efforts' ? 'effort' : 'item';
   const { W } = size();
   let { H } = size();
   const cl = [...model.clusters.values()].sort((a, b) => (a.key === GROWING) - (b.key === GROWING) || b.total - a.total);
@@ -364,9 +435,10 @@ function renderTop(model) {
     const [tx, ty] = bridge ? edgePoint(cs[0], cs[1]) : [cs[0].cx, cs[0].cy];
     return { item: it, r: 5.5, tx, ty, bridge, spread: bridge ? 10 : cs[0].r };
   });
-  scatter(nodes, W, H, 11, cl.map(c => chipSpot(c.cx, c.cy, c.key)));
+  // the longest the count line can get (its own count, plus “+N more →”), so dots stay put while searching
+  scatter(nodes, W, H, 11, cl.map(c => chipSpot(c.cx, c.cy, c.key, `${c.total} ${unit}s`.length + (c.total > state.cap ? 3 + `+${c.total} more →`.length : 0))));
 
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', 'Themes in the archive, each a green glow of dots around its name');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', state.mode === 'efforts' ? 'Efforts, sorted into the five PGS Collage themes, each a green glow of dots around its name' : 'Themes in the archive, each a green glow of dots around its name');
   defsFor(svg, [['g', HEAT, 1]]);
   const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
   const gTrail = svg.append('g'), gLinks = svg.append('g'), gHit = svg.append('g'), gNodes = svg.append('g'), gLab = svg.append('g');
@@ -387,7 +459,7 @@ function renderTop(model) {
       .on('click', open)
       .on('mouseenter', () => { hover(true); gLab.selectAll('.clabel').classed('hot', function () { return this.dataset.k === c.key; }); })
       .on('mouseleave', () => { hover(false); gLab.selectAll('.clabel').classed('hot', false); });
-    labelFor(gLab, c.cx, c.cy, c.key, hits === null ? `${c.total} ${c.total === 1 ? 'item' : 'items'}` : `${hits} of ${c.total}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key}, ${hits === null ? c.total + ' items' : hits + ' of ' + c.total + ' match'}`)
+    labelFor(gLab, c.cx, c.cy, c.key, hits === null ? `${c.total} ${c.total === 1 ? unit : unit + 's'}` : `${hits} of ${c.total}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key}, ${hits === null ? c.total + ' items' : hits + ' of ' + c.total + ' match'}`)
       .classed('zero', hits === 0)
       .on('mouseenter focus', () => hover(true)).on('mouseleave blur', () => hover(false));
   });
@@ -403,7 +475,7 @@ function renderTop(model) {
   nodeGroup(gNodes, nodes, false, null);
   mount(svg);
 
-  $('crumb').innerHTML = `<span class="counts">${model.list.length} resources · ${cl.length} themes</span>`;
+  $('crumb').innerHTML = `<span class="counts">${model.list.length} ${state.mode === 'efforts' ? (model.list.length === 1 ? 'effort' : 'efforts') : 'resources'} · ${cl.length} themes</span>`;
   renderStart(model);
   $('list').innerHTML = '';
   $('foot').innerHTML = '';
@@ -447,12 +519,88 @@ function renderInside(model, key) {
   $('foot').innerHTML = (c.folded ? `Themes growing here: ${c.folded.map(esc).join(', ')}. ` : '') + (bridges ? `${bridges} item${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '');
 }
 
+// ---- Efforts: inside a big theme, grouped by Collage card ----
+function renderInsideEfforts(model, key) {
+  const c = model.clusters.get(key);
+  const { W } = size();
+  const byCard = new Map();   // each effort sits under the first of its cards that belongs to this theme
+  c.members.forEach(it => {
+    const name = it.cards.find(n => (CARDS.get(cardKey(n)) || {}).big === key) || '';
+    const label = name || 'No card yet';
+    if (!byCard.has(label)) byCard.set(label, { key: label, card: name, members: [] });
+    byCard.get(label).members.push(it);
+  });
+  const groups = [...byCard.values()];
+  groups.forEach(g => { g.R = Math.max(chipW(g.key) / 2 + 14, 30 + 17 * Math.sqrt(g.members.length)); });
+  let H = Math.max(460, Math.min(720, 280 + 60 * Math.sqrt(c.total)));
+  if (!groups.length) H = 40;
+  else if (isPhone(W)) { groups.forEach(g => { g.R = 36 + 13 * Math.sqrt(g.members.length); }); H = trailLayout(groups, W); }
+  else spiralLayout(groups, W, H, 70);
+  const nodes = [];
+  groups.forEach(g => g.members.forEach(it => nodes.push({ item: it, g, r: 7.5, tx: g.cx, ty: g.cy, spread: g.r })));
+  if (nodes.length) scatter(nodes, W, H, 5, groups.map(g => chipSpot(g.cx, g.cy, g.key)));
+
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', `${key}: efforts grouped by Collage card`);
+  defsFor(svg, [['g', HEAT, 1]]);
+  const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
+  const gNodes = svg.append('g'), gLab = svg.append('g');
+  const maxGroup = d3.max(groups, g => g.members.length);
+  groups.forEach(g => {
+    const hits = state.match ? g.members.filter(it => state.match.has(it.id)).length : null;
+    densityGlow(gGlow, g.cx, g.cy, g.key, g.members.length, maxGroup, null, d3.min(groups, k => k.members.length), hits === 0 ? 0.25 : 1);
+    labelFor(gLab, g.cx, g.cy, g.key, hits === null ? `${g.members.length} ${g.members.length === 1 ? 'effort' : 'efforts'}` : `${hits} of ${g.members.length}`, '', null, '').classed('zero', hits === 0);
+  });
+  nodeGroup(gNodes, nodes, true, key);
+  mount(svg);
+
+  $('crumb').innerHTML = `<button class="back" id="back">← all themes</button><h2>${esc(key)}</h2>`;
+  $('back').onclick = () => go(null);
+  $('list').innerHTML = groups.length ? groups.map(g => {
+    const cd = g.card ? CARDS.get(cardKey(g.card)) : null;
+    return `<section><h3>${shapeSvg('effort', 'var(--ink)', 6)}${esc(g.key)}</h3>${cd && cd.desc ? `<p class="cardnote">${esc(cd.desc)}</p>` : ''}<ul>${
+      g.members.map(it => `<li${state.match && !state.match.has(it.id) ? ' class="miss"' : ''}><button data-id="${esc(it.id)}"><span class="t">${esc(it.title)}</span><span class="d">${esc(it.country || '–')}</span></button></li>`).join('')
+    }</ul></section>`;
+  }).join('') : '<p class="note">Nothing here yet. Efforts are added by the core team: to suggest one, message an organiser on Telegram or email postgrowthsg@gmail.com.</p>';
+  $('list').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => openPanel(model.list.find(it => it.id === b.dataset.id)));
+  const bridges = c.members.filter(it => it.keys.length > 1).length;
+  $('foot').innerHTML = bridges ? `${bridges} effort${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '';
+}
+
+function openEffortPanel(it) {
+  lastFocus = document.activeElement;
+  state.sel = it.id;
+  d3.selectAll('g.node').classed('sel', d => d.item.id === it.id);
+  const model = current;
+  const near = model.list.filter(o => o !== it && o.keys.some(k => it.keys.includes(k))).sort(byRecent).slice(0, 5);
+  const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
+  const p = $('panel');
+  p.innerHTML = `
+    <button class="x" id="px" aria-label="Close">✕</button>
+    <span class="type">${shapeSvg('effort', colOf(it), 6)}effort</span>
+    <h3>${esc(it.title)}</h3>
+    ${it.country ? `<div class="meta">${esc(it.country)}</div>` : ''}
+    ${it.desc ? `<p>${esc(it.desc)}</p>` : ''}
+    ${it.cards.length ? `<h4>collage ${it.cards.length > 1 ? 'cards' : 'card'}</h4><div class="tags">${it.cards.map(n => {
+      const cd = CARDS.get(cardKey(n)), big = cd && cd.big;
+      return `<button data-big="${esc(big || '')}" title="${big ? 'Open ' + esc(big) : 'This card has no theme yet'}">${esc(n.toLowerCase())}${big ? ' · ' + esc(big) : ''}</button>`;
+    }).join('')}</div>` : ''}
+    ${it.link ? `<a class="open-link" href="${esc(it.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+    ${it.extraLinks.length ? `<div class="meta">${it.extraLinks.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(host(u))} ↗</a>`).join(' · ')}</div>` : ''}
+    ${near.length ? `<h4>nearby</h4><div class="near">${near.map(o => `<button data-id="${esc(o.id)}">${shapeSvg('effort', colOf(o), 4.5)}<span>${esc(o.title)}</span></button>`).join('')}</div>` : ''}`;
+  p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
+  $('px').onclick = closePanel;
+  p.querySelectorAll('.near button').forEach(b => b.onclick = () => openPanel(model.list.find(o => o.id === b.dataset.id)));
+  p.querySelectorAll('.tags button').forEach(b => b.onclick = () => { if (b.dataset.big) { closePanel(); go(b.dataset.big); } });
+  $('px').focus();
+}
+
 // The "start here" row is gone; its space is kept on the home page so the map stays where it was.
 function renderStart() {
   $('start').innerHTML = '';
 }
 
 function renderLegend(model) {
+  if (state.mode === 'efforts') { $('legend').innerHTML = `<span>${shapeSvg('effort', 'var(--muted)')}Efforts</span><span>sorted by the PGS Collage</span>`; return; }
   const n = k => model.list.filter(it => it.type === k).length;
   $('legend').innerHTML = TYPES.filter(t => n(t.key)).map(t => `<span>${shapeSvg(t.key, 'var(--muted)')}${t.plural}</span>`).join('');
 }
@@ -466,7 +614,7 @@ function mount(svg) {
 function showTip(d) {
   const tip = $('tip'), map = $('map'), svg = map.querySelector('svg');
   const k = map.clientWidth / (+svg.getAttribute('viewBox').split(' ')[2] || map.clientWidth);
-  tip.innerHTML = `<b>${esc(d.item.title)}</b><small>${TYPE[d.item.type].label}${d.item.date ? ' · ' + fmtDate(d.item.date) : ''}${d.item.keys.length > 1 ? ' · ' + d.item.keys.map(esc).join(' ↔ ') : ''}</small>`;
+  tip.innerHTML = `<b>${esc(d.item.title)}</b><small>${typeInfo(d.item).label}${d.item.date ? ' · ' + fmtDate(d.item.date) : ''}${d.item.country ? ' · ' + esc(d.item.country) : ''}${d.item.keys.length > 1 ? ' · ' + d.item.keys.map(esc).join(' ↔ ') : ''}</small>`;
   tip.hidden = false;
   const x = d.x * k, y = d.y * k, w = tip.offsetWidth;
   tip.style.left = Math.max(0, Math.min(map.clientWidth - w, x - w / 2)) + 'px';
@@ -486,6 +634,7 @@ function showNote(html, x, y) {
 let lastFocus = null, current = null;
 function openPanel(it) {
   if (!it) return;
+  if (it.kind === 'effort') return openEffortPanel(it);
   lastFocus = document.activeElement;
   state.sel = it.id;
   d3.selectAll('g.node').classed('sel', d => d.item.id === it.id);
@@ -521,25 +670,41 @@ function closePanel() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
-function go(key) {
-  const h = key ? '#c-' + slug(key) : '';
+// The address bar keeps the view: nothing = Resources, #c-theme = a resource theme, #efforts = Efforts, #e-theme = an Efforts theme.
+const hashFor = () => state.mode === 'efforts' ? (state.view ? '#e-' + slug(state.view) : '#efforts') : (state.view ? '#c-' + slug(state.view) : '');
+function syncHash() {
+  const h = hashFor();
   if (location.hash !== h) { if (h) location.hash = h; else history.replaceState(null, '', location.pathname + location.search); }
-  state.view = key; render();
+}
+function go(key) {
+  state.view = key; syncHash(); render();
   if (key) $('crumb').scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
-function fromHash() {
-  const m = location.hash.match(/^#c-([a-z0-9-]+)$/);
-  if (!m) return null;
-  return [...buildModel(items(), state.cap).clusters.keys()].find(k => slug(k) === m[1]) || null;
+function setMode(mode) {
+  if (state.mode === mode) return;
+  closePanel(); state.mode = mode; state.view = null; syncHash(); render();
 }
+function readHash() {
+  const h = location.hash, e = h.match(/^#e-([a-z0-9-]+)$/);
+  if (EFFORTS_READY && (h === '#efforts' || e)) {
+    const keys = [...buildEffortModel(EFFORTS, state.cap).clusters.keys()];
+    return { mode: 'efforts', view: e ? keys.find(k => slug(k) === e[1]) || null : null };
+  }
+  const m = h.match(/^#c-([a-z0-9-]+)$/);
+  return { mode: 'resources', view: m ? [...buildModel(items(), state.cap).clusters.keys()].find(k => slug(k) === m[1]) || null : null };
+}
+function applyHash() { const h = readHash(); state.mode = h.mode; state.view = h.view; }
 function render() {
   hideTip();
-  current = buildModel(items(), state.cap, state.match);
+  const efforts = state.mode === 'efforts';
+  current = efforts ? buildEffortModel(EFFORTS, state.cap, state.match) : buildModel(items(), state.cap, state.match);
+  $('mode-resources').setAttribute('aria-pressed', String(!efforts)); $('mode-efforts').setAttribute('aria-pressed', String(efforts));
   renderLegend(current);
-  if (state.view && current.clusters.has(state.view)) renderInside(current, state.view);
+  if (state.view && current.clusters.has(state.view)) (efforts ? renderInsideEfforts : renderInside)(current, state.view);
   else { state.view = null; renderTop(current); }
 }
-
+$('mode-resources').addEventListener('click', () => setMode('resources'));
+$('mode-efforts').addEventListener('click', () => setMode('efforts'));
 
 // ---- Search: MiniSearch runs in the browser (no server, no AI) ----
 const fold = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -548,17 +713,18 @@ const SEARCH = { mini: null, results: [], hi: -1, timer: 0 };
 function buildSearch() {
   if (typeof MiniSearch === 'undefined') return;                     // library blocked or offline: the map still works
   const mini = new MiniSearch({
-    fields: ['title', 'authors', 'themes', 'extra', 'desc', 'typeLabel'],
+    fields: ['title', 'authors', 'themes', 'extra', 'desc', 'typeLabel', 'country'],
     storeFields: ['ref'],
     processTerm: t => fold(t) || null,                               // ignore case and accents
     searchOptions: {
-      boost: { title: 3, authors: 2, themes: 2, extra: 1.5, desc: 1, typeLabel: 1 },
+      boost: { title: 3, authors: 2, themes: 2, extra: 1.5, desc: 1, typeLabel: 1, country: 1 },
       prefix: true,                                                  // "commun" finds community and commons
       fuzzy: 0.2,                                                    // about one typo in a five-letter word
       combineWith: 'AND',                                            // every word must match
     },
   });
-  mini.addAll(items().map(it => ({ id: 'r:' + it.id, ref: it.id, title: it.title, authors: it.authors, themes: it.tags.join(' '), extra: it.extra.join(' '), desc: it.desc, typeLabel: TYPE[it.type].label })));
+  mini.addAll(items().map(it => ({ id: 'r:' + it.id, ref: it.id, title: it.title, authors: it.authors, themes: it.tags.join(' '), extra: it.extra.join(' '), desc: it.desc, typeLabel: TYPE[it.type].label, country: '' })));
+  mini.addAll(EFFORTS.map(it => ({ id: 'x:' + it.id, ref: it.id, title: it.title, authors: '', themes: it.cards.concat(it.keys.filter(k => k !== GROWING)).join(' '), extra: '', desc: it.desc, typeLabel: 'Effort', country: it.country })));
   SEARCH.mini = mini;
   $('find').hidden = false;
 }
@@ -570,8 +736,8 @@ function runSearch() {
     const was = state.match; SEARCH.results = []; SEARCH.hi = -1; state.q = ''; state.match = null;
     closeResults(); if (was) render(); return;
   }
-  const byId = new Map(items().map(it => [it.id, it]));
-  SEARCH.results = SEARCH.mini.search(q).map(h => byId.get(h.ref)).filter(Boolean).map(item => ({ kind: 'resource', item }));
+  const byId = new Map([...items(), ...EFFORTS].map(it => [it.id, it]));
+  SEARCH.results = SEARCH.mini.search(q).map(h => byId.get(h.ref)).filter(Boolean).map(item => ({ kind: item.kind === 'effort' ? 'effort' : 'resource', item }));
   state.q = q; state.match = new Set(SEARCH.results.map(r => r.item.id)); SEARCH.hi = SEARCH.results.length ? 0 : -1;
   showResults(); render();
 }
@@ -582,7 +748,9 @@ function showResults() {
   $('rcount').textContent = n ? `${n} ${n === 1 ? 'match' : 'matches'}` : '';
   $('rlist').innerHTML = n ? SEARCH.results.map((r, i) => {
     const it = r.item;
-    return `<div class="res" role="option" id="res-${i}" data-i="${i}" aria-selected="false">${shapeSvg(it.type, 'var(--ink)', 6)}<span class="rt"><span class="rname">${esc(it.title)}</span><span class="rsub">resource · ${esc(TYPE[it.type].label.toLowerCase())}${it.tags[0] ? ' · ' + esc(it.tags[0].toLowerCase()) : ''}</span></span></div>`;
+    const sub = it.kind === 'effort' ? ['effort', (it.cards[0] || '').toLowerCase(), (it.country || '').toLowerCase()].filter(Boolean).join(' · ')
+      : `resource · ${TYPE[it.type].label.toLowerCase()}${it.tags[0] ? ' · ' + it.tags[0].toLowerCase() : ''}`;
+    return `<div class="res" role="option" id="res-${i}" data-i="${i}" aria-selected="false">${shapeSvg(it.type, 'var(--ink)', 6)}<span class="rt"><span class="rname">${esc(it.title)}</span><span class="rsub">${esc(sub)}</span></span></div>`;
   }).join('') : `<div class="rnone">Nothing matches “${esc(state.q)}” yet. Try a shorter word.</div>`;
   highlight(SEARCH.hi, false);
 }
@@ -595,6 +763,8 @@ function highlight(i, scroll) {
 function chooseResult(i) {
   const r = SEARCH.results[i]; if (!r) return;
   closeResults();
+  const want = r.kind === 'effort' ? 'efforts' : 'resources';   // a result from the other view switches the view first
+  if (state.mode !== want) setMode(want);
   openPanel(r.item);
 }
 function clearSearch() { $('q').value = ''; runSearch(); }
@@ -616,13 +786,14 @@ $('rlist').addEventListener('click', e => { const r = e.target.closest('.res'); 
 $('qx').addEventListener('click', () => { clearSearch(); $('q').focus(); });
 document.addEventListener('click', e => { if (!$('find').contains(e.target)) closeResults(); });
 
-window.addEventListener('hashchange', () => { state.view = fromHash(); render(); });
+window.addEventListener('hashchange', () => { applyHash(); render(); });
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
 
-load().then(ok => {
+Promise.all([load(), loadEfforts()]).then(([ok, effortsOk]) => {
   if (!ok) { $('status').textContent = 'The archive couldn’t load just now. Please try again in a moment.'; return; }
   $('status').remove();
-  state.view = fromHash();
+  if (effortsOk) $('modes').hidden = false;     // no Efforts data at all: the switch stays hidden and the map is as before
+  applyHash();
   buildSearch();
   render();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());

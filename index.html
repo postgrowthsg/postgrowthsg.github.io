@@ -141,7 +141,7 @@ function toItems(rows) {
   const [head, ...body] = rows;
   const col = name => head.findIndex(h => h.trim().toLowerCase() === name);
   const C = { id: col('id'), status: col('status'), title: col('title'), link: col('link'), type: col('type'), t1: col('theme 1'), t2: col('theme 2'),
-    extra: col('extra tags'), date: col('date'), authors: col('authors'), desc: col('description'), shared: col('shared by'), added: col('date added'), archive: col('archive link') };
+    extra: Math.max(col('location'), col('extra tags')), date:   /* Location; falls back to the old header */ col('date'), authors: col('authors'), desc: col('description'), shared: col('shared by'), added: col('date added'), archive: col('archive link') };
   const get = (r, k) => (C[k] >= 0 ? String(r[C[k]] || '') : '').trim();
   return body.filter(r => get(r, 'status').toLowerCase() === 'live' && get(r, 'title') && get(r, 't1')).map(r => ({
     id: get(r, 'id') || get(r, 'title'), title: get(r, 'title'), link: get(r, 'link'), type: typeKey(get(r, 'type')),
@@ -199,12 +199,12 @@ function toCards(rows) {
 }
 /** Efforts tab -> efforts. Only live rows with a name. An effort sits in the big theme of each of its cards (at most two); no card = Still growing. */
 function toEfforts(rows) {
-  return sheetRows(rows, ['id', 'status', 'name', 'link', 'card 1', 'card 2', 'country', 'description', 'extra links', 'date added'])
+  return sheetRows(rows, ['id', 'status', 'name', 'link', 'card 1', 'card 2', 'location', 'country', 'description', 'extra links', 'date added'])
     .filter(r => r.status.toLowerCase() === 'live' && r.name).map(r => {
       const cards = [...new Set([r['card 1'], r['card 2']].filter(Boolean).map(n => (CARDS.get(cardKey(n)) || { name: n }).name))];
       const bigs = [...new Set(cards.map(n => (CARDS.get(cardKey(n)) || {}).big).filter(Boolean))].slice(0, 2);
       return { kind: 'effort', type: 'effort', id: 'e:' + (r.id || slug(r.name)), title: r.name, link: /^https?:/i.test(r.link) ? r.link : '', cards,
-        keys: bigs.length ? bigs : [GROWING], country: r.country, desc: r.description, added: r['date added'],
+        keys: bigs.length ? bigs : [GROWING], country: r.location || r.country, desc: r.description   /* Location; falls back to the old Country header */, added: r['date added'],
         extraLinks: r['extra links'].split(/[\n,]+/).map(x => x.trim()).filter(x => /^https?:\/\//i.test(x)) };
     });
 }
@@ -223,7 +223,7 @@ const MIN_PATCH = 4;        // a theme gets its own patch once it has this many 
 const MAX_CLUSTERS = 14;    // safety limit so the map stays readable as the archive grows
 // Places aren't themes: Singapore & Asia is a lens that lights up items across every theme.
 // A place tag only decides where a dot sits when the item has no other theme.
-const LENS = { label: 'Singapore & Asia', places: ['singapore', 'asia', 'southeast asia', 'south-east asia', 'sea', 'asean', 'malaysia', 'indonesia', 'thailand', 'vietnam', 'philippines', 'myanmar', 'cambodia', 'laos', 'brunei', 'timor-leste', 'china', 'hong kong', 'taiwan', 'japan', 'korea', 'south korea', 'india', 'bangladesh', 'sri lanka', 'nepal', 'pakistan'] };
+const LENS = { label: 'Singapore & Asia', places: ['singapore', 'asia', 'east asia', 'south asia', 'central asia', 'west asia', 'southeast asia', 'south-east asia', 'sea', 'asean', 'malaysia', 'indonesia', 'thailand', 'vietnam', 'philippines', 'myanmar', 'cambodia', 'laos', 'brunei', 'timor-leste', 'china', 'hong kong', 'taiwan', 'japan', 'korea', 'south korea', 'india', 'bangladesh', 'sri lanka', 'nepal', 'pakistan'] };
 const isPlace = t => LENS.places.includes(String(t || '').trim().toLowerCase());
 const placeTags = it => { const t = it.tags.slice(0, 2), own = t.filter(x => !isPlace(x)); return own.length ? own : t; };
 const inLens = it => it.kind === 'effort' ? isPlace(it.country) : [...it.tags, ...(it.extra || [])].some(isPlace);
@@ -410,7 +410,7 @@ function labelFor(gLab, x, y, name, metaText, moreText, onOpen, aria) {
 }
 // Where the chip sits (its centre) and the area dots keep clear of (chip + count line).
 // metaLen = characters in the count line under the chip; it can be wider than the chip itself.
-const chipSpot = (x, y, name, metaLen = 0) => ({ x, y: y + 8, a: Math.max(chipW(name) / 2 + 4, metaLen * 4.3 + 8), b: 30 });
+const chipSpot = (x, y, name, metaLen = 0) => ({ x, y: y + 8, a: Math.max(chipW(name) / 2 + 4, metaLen * 4.3 + 8), b: 33 });
 // One glow per theme, centred on its chip. It shows density, not extent:
 // a little larger and much darker the more items the theme holds.
 function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1, dim = 1) {
@@ -692,7 +692,7 @@ function openPanel(it) {
       if (isPlace(t)) return `<button data-lens="1" class="place" title="Light up everything about ${esc(LENS.label)}">${esc(t.toLowerCase())}</button>`;
       const k = model.clusters.has(t) ? t : GROWING;
       return `<button data-k="${esc(k)}" title="Open ${esc(k.toLowerCase())}">${esc(t.toLowerCase())}</button>`;
-    }).join('')}${(it.extra || []).map(t => `<span class="extra">${esc(t.toLowerCase())}</span>`).join('')}</div>
+    }).join('')}${(it.extra || []).map(t => isPlace(t) ? `<button data-lens="1" class="place" title="Light up everything about ${esc(LENS.label)}">${esc(t.toLowerCase())}</button>` : `<span class="extra">${esc(t.toLowerCase())}</span>`).join('')}</div>
     ${it.link ? `<a class="open-link" href="${esc(it.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
     ${it.archive ? `<a class="archived" href="${esc(it.archive)}" target="_blank" rel="noopener">Archived copy ↗</a>` : ''}
     ${near.length ? `<h4>nearby</h4><div class="near">${near.map(o => `<button data-id="${o.id}">${shapeSvg(o.type, colOf(o), 4.5)}<span>${esc(o.title)}</span></button>`).join('')}</div>` : ''}`;

@@ -219,3 +219,40 @@ h1 {
   .about-page ul.types li { grid-template-columns: 22px minmax(0, 1fr); }
   .about-page ul.types .e { grid-column: 2; }
 }
+
+/* Search (v2): a pill box above the map, a dropdown list of matches, and the map fading to show them */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.find { display: block; }
+.searchbox { position: relative; width: 100%; }
+.searchbox input { width: 100%; font: inherit; font-size: 15px; color: var(--ink); background: var(--card); border: 1.5px solid var(--ink); border-radius: 999px; padding: 8px 40px 8px 16px; }
+.searchbox input::placeholder { color: var(--muted); }
+.qx { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; cursor: pointer; font-size: 13px; color: var(--muted); line-height: 1; }
+.qx:hover { background: #f3f5ef; color: var(--ink); }
+.results { position: absolute; z-index: 15; left: 0; right: 0; top: calc(100% + 6px); background: var(--card); border: 1.5px solid var(--ink); border-radius: 14px; overflow: hidden; }
+.rcount { font-size: 12.5px; color: var(--muted); padding: 8px 16px 6px; border-bottom: 1px solid var(--rule); min-height: 31px; }
+.rlist { max-height: min(52vh, 416px); overflow-y: auto; }
+.res { display: flex; gap: 12px; align-items: baseline; padding: 9px 16px; cursor: pointer; border-bottom: 1px solid var(--rule); }
+.res:last-child { border-bottom: 0; }
+.res.hi { background: #f3f5ef; }
+.res svg.shape { flex: none; transform: translateY(2px); }
+.rt { display: grid; min-width: 0; }
+.rname { font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.rsub { font-size: 12.5px; color: var(--muted); }
+.rnone { padding: 14px 16px; font-size: 14px; color: var(--muted); }
+.clabel.zero { opacity: .5; }
+.clabel.zero .pill { stroke: var(--muted); }
+.list li.miss { opacity: .35; }
+
+/* Header, right-hand column (v2): About at the top, the questions, then the search just above the type icons */
+.head .right { display: flex; flex-direction: column; justify-content: space-between; align-self: stretch; gap: 22px; min-width: 0; }
+.head .right .nav { align-self: flex-end; }
+.head .side { display: grid; gap: 14px; min-width: 0; }
+.faq summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-bottom: 6px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: '+'; font-size: 15px; letter-spacing: 0; }
+.faq[open] summary::after { content: '–'; }
+.faq ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.faq a { color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 4px; }
+.faq a:hover { color: var(--ink); }
+.about-page [id] { scroll-margin-top: 16px; }
+@media (max-width: 760px) { .head .right { align-self: auto; } .head .right .nav { align-self: flex-start; } }

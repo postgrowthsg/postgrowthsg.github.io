@@ -24,10 +24,35 @@
     <img class="logo" src="logo.png" alt="Post-Growth SG">
     <h1>What we’ve been reading, watching &amp; sharing</h1>
     </div>
-    <nav class="nav" aria-label="Pages"><a href="about.html">About</a></nav>
+    <div class="right">
+      <nav class="nav" aria-label="Pages"><a href="about.html">About</a></nav>
+      <div class="side">
+      <details class="faq" id="faq" open>
+        <summary>Questions</summary>
+        <ul>
+          <li><a href="about.html#what-is-postgrowth">What is Postgrowth Singapore?</a></li>
+          <li><a href="about.html#what-we-gather">What do you accept?</a></li>
+          <li><a href="about.html#resource-or-effort">Resource or effort: what’s the difference?</a></li>
+          <li><a href="about.html#reading-the-map">How do I read the map?</a></li>
+          <li><a href="about.html#sharing">How do I share something?</a></li>
+        </ul>
+      </details>
+      <div class="find" id="find" hidden>
+        <div class="searchbox" role="search">
+          <label class="sr" for="q">Search the archive</label>
+          <input id="q" type="text" placeholder="Search the archive" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="rlist" aria-autocomplete="list">
+          <button id="qx" class="qx" type="button" aria-label="Clear search" hidden>✕</button>
+          <div class="results" id="results" hidden>
+            <div class="rcount" id="rcount" aria-live="polite"></div>
+            <div class="rlist" id="rlist" role="listbox" aria-label="Search results"></div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
   </header>
 
-  <div class="start-gap" id="start" aria-hidden="true"></div>
+  <div id="start" hidden></div>
 
   <div class="bar">
     <div class="crumb" id="crumb"></div>
@@ -46,10 +71,12 @@
   </footer>
 </div>
 <script src="snail.js"></script>
+<script>if (matchMedia('(max-width: 640px)').matches) document.getElementById('faq').removeAttribute('open');</script>
 
 <aside class="panel" id="panel" aria-label="Resource details" aria-hidden="true"></aside>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/minisearch/7.1.0/umd/index.min.js" integrity="sha384-8yIxwn98dN0YVJyq6ZD1X4cOy4NN35HB7vg+rRe4bFue0fqqUxQ0y5vB2XVQU/Xt" crossorigin="anonymous"></script>
 <script>
 const TYPES = [
   { key: 'research',  label: 'Research',  plural: 'Research' },
@@ -130,7 +157,7 @@ function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; le
 
 const GROWING = 'Still growing';
 const MAX_CLUSTERS = 8;
-const state = { view: null, cap: 10, sel: null };
+const state = { view: null, cap: 10, sel: null, q: '', match: null };
 const $ = id => document.getElementById(id);
 const slug = s => s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const fmtDate = d => {
@@ -145,7 +172,7 @@ const items = () => ITEMS;
 
 
 // ---- Model: tags -> at most 8 clusters + Still growing, caps, bridges ----
-function buildModel(list, cap) {
+function buildModel(list, cap, match) {
   const count = new Map();
   list.forEach(it => new Set(it.tags.slice(0, 2)).forEach(t => count.set(t, (count.get(t) || 0) + 1)));
   const ranked = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(e => e[0]);
@@ -162,7 +189,8 @@ function buildModel(list, cap) {
     it.keys.forEach(k => clusters.get(k).members.push(it));
   });
   const visible = new Set();
-  clusters.forEach(c => { c.members.sort(byRecent); c.members.slice(0, cap).forEach(it => visible.add(it)); });
+  // While searching, matches come first, so a match isn’t hidden behind “+N more” when it could be shown.
+  clusters.forEach(c => { c.members.sort(match ? (a, b) => (match.has(b.id) - match.has(a.id)) || byRecent(a, b) : byRecent); c.members.slice(0, cap).forEach(it => visible.add(it)); });
   clusters.forEach(c => { c.hidden = c.members.filter(it => !visible.has(it)).length; c.total = c.members.length; });
   return { clusters, visible, list };
 }
@@ -264,6 +292,7 @@ function nodeGroup(sel, data, markBridges, inside) {
   const g = sel.selectAll('g.node').data(data).join('g')
     .attr('class', d => 'node' + (state.sel === d.item.id ? ' sel' : ''))
     .attr('transform', d => `translate(${d.x},${d.y})`)
+    .attr('opacity', d => state.match && !state.match.has(d.item.id) ? 0.15 : 1)
     .attr('tabindex', 0).attr('role', 'button')
     .attr('aria-label', d => `${d.item.title}, ${TYPE[d.item.type].label}`)
     .on('click', (e, d) => openPanel(d.item))
@@ -299,10 +328,10 @@ function labelFor(gLab, x, y, name, metaText, moreText, onOpen, aria) {
 const chipSpot = (x, y, name) => ({ x, y: y + 8, a: chipW(name) / 2 + 4, b: 30 });
 // One glow per theme, centred on its chip. It shows density, not extent:
 // a little larger and much darker the more items the theme holds.
-function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1) {
+function densityGlow(gGlow, x, y, name, count, maxCount, key, minCount = 1, dim = 1) {
   const t = maxCount > minCount ? (count - minCount) / (maxCount - minCount) : 1;   // 0 = fewest, 1 = most
   const r = 66 + 17 * Math.sqrt(count);                        // size follows item count only
-  const a = 0.18 + 0.77 * t;                                   // faint wash -> deep green
+  const a = (0.18 + 0.77 * t) * dim;                           // faint wash -> deep green (dimmed when a search finds nothing here)
   gGlow.append('circle').attr('cx', x).attr('cy', y).attr('r', r).attr('fill', 'url(#g)').attr('fill-opacity', a);
   if (key) gGlow.append('circle').attr('class', 'deep').attr('data-k', key).attr('cx', x).attr('cy', y).attr('r', r).attr('fill', 'url(#g)').attr('fill-opacity', Math.min(1, a + 0.35));
 }
@@ -347,7 +376,8 @@ function renderTop(model) {
 
   const maxTotal = d3.max(cl, c => c.total);
   cl.forEach(c => {
-    densityGlow(gGlow, c.cx, c.cy, c.key, c.total, maxTotal, c.key, d3.min(cl, k => k.total));
+    const hits = state.match ? c.members.filter(it => state.match.has(it.id)).length : null;   // null = not searching
+    densityGlow(gGlow, c.cx, c.cy, c.key, c.total, maxTotal, c.key, d3.min(cl, k => k.total), hits === 0 ? 0.25 : 1);
     const deepen = on => gGlow.selectAll('.deep').classed('on', function () { return on && this.dataset.k === c.key; });
     // "Still growing" explains itself in a small pop-up on hover, instead of a note under the map.
     const note = c.key === GROWING && c.folded ? `<b>Still growing</b><small>Themes with only a few items so far: ${c.folded.map(esc).join(', ')}. As they gather more, they become patches of their own, out at the snail’s growing tip.</small>` : null;
@@ -357,7 +387,8 @@ function renderTop(model) {
       .on('click', open)
       .on('mouseenter', () => { hover(true); gLab.selectAll('.clabel').classed('hot', function () { return this.dataset.k === c.key; }); })
       .on('mouseleave', () => { hover(false); gLab.selectAll('.clabel').classed('hot', false); });
-    labelFor(gLab, c.cx, c.cy, c.key, `${c.total} ${c.total === 1 ? 'item' : 'items'}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key}, ${c.total} items`)
+    labelFor(gLab, c.cx, c.cy, c.key, hits === null ? `${c.total} ${c.total === 1 ? 'item' : 'items'}` : `${hits} of ${c.total}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key}, ${hits === null ? c.total + ' items' : hits + ' of ' + c.total + ' match'}`)
+      .classed('zero', hits === 0)
       .on('mouseenter focus', () => hover(true)).on('mouseleave blur', () => hover(false));
   });
 
@@ -365,7 +396,7 @@ function renderTop(model) {
     n.item.keys.forEach(k => {
       const mates = nodes.filter(m => !m.bridge && m.item.keys[0] === k);
       const near = d3.least(mates, m => (m.x - n.x) ** 2 + (m.y - n.y) ** 2);
-      if (near) gLinks.append('path').attr('class', 'link').attr('d', `M${n.x},${n.y} Q${(n.x + near.x) / 2 + (near.y - n.y) * 0.15},${(n.y + near.y) / 2 - (near.x - n.x) * 0.15} ${near.x},${near.y}`);
+      if (near) gLinks.append('path').attr('class', 'link').attr('opacity', state.match && !state.match.has(n.item.id) ? 0.15 : 1).attr('d', `M${n.x},${n.y} Q${(n.x + near.x) / 2 + (near.y - n.y) * 0.15},${(n.y + near.y) / 2 - (near.x - n.x) * 0.15} ${near.x},${near.y}`);
     });
   });
 
@@ -397,8 +428,9 @@ function renderInside(model, key) {
   const gNodes = svg.append('g'), gLab = svg.append('g');
   const maxKind = d3.max(groups, g => g.members.length);
   groups.forEach(g => {
-    densityGlow(gGlow, g.cx, g.cy, g.key, g.members.length, maxKind, null, d3.min(groups, k => k.members.length));
-    labelFor(gLab, g.cx, g.cy, g.key, `${g.members.length} ${g.members.length === 1 ? 'item' : 'items'}`, '', null, '');
+    const hits = state.match ? g.members.filter(it => state.match.has(it.id)).length : null;
+    densityGlow(gGlow, g.cx, g.cy, g.key, g.members.length, maxKind, null, d3.min(groups, k => k.members.length), hits === 0 ? 0.25 : 1);
+    labelFor(gLab, g.cx, g.cy, g.key, hits === null ? `${g.members.length} ${g.members.length === 1 ? 'item' : 'items'}` : `${hits} of ${g.members.length}`, '', null, '').classed('zero', hits === 0);
   });
   nodeGroup(gNodes, nodes, true, key);
   mount(svg);
@@ -408,7 +440,7 @@ function renderInside(model, key) {
   $('start').innerHTML = '';
   $('start').style.height = '0px';
   $('list').innerHTML = groups.map(g => `<section><h3>${shapeSvg(g.t.key, 'var(--ink)', 6)}${g.t.plural}</h3><ul>${
-    g.members.map(it => `<li><button data-id="${it.id}"><span class="t">${esc(it.title)}</span><span class="d">${fmtDate(it.date) || '–'}</span></button></li>`).join('')
+    g.members.map(it => `<li${state.match && !state.match.has(it.id) ? ' class="miss"' : ''}><button data-id="${it.id}"><span class="t">${esc(it.title)}</span><span class="d">${fmtDate(it.date) || '–'}</span></button></li>`).join('')
   }</ul></section>`).join('');
   $('list').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => openPanel(model.list.find(it => it.id === b.dataset.id)));
   const bridges = c.members.filter(it => it.keys.length > 1).length;
@@ -418,7 +450,6 @@ function renderInside(model, key) {
 // The "start here" row is gone; its space is kept on the home page so the map stays where it was.
 function renderStart() {
   $('start').innerHTML = '';
-  $('start').style.height = isPhone($('map').clientWidth || 900) ? '0px' : '36px';
 }
 
 function renderLegend(model) {
@@ -503,11 +534,87 @@ function fromHash() {
 }
 function render() {
   hideTip();
-  current = buildModel(items(), state.cap);
+  current = buildModel(items(), state.cap, state.match);
   renderLegend(current);
   if (state.view && current.clusters.has(state.view)) renderInside(current, state.view);
   else { state.view = null; renderTop(current); }
 }
+
+
+// ---- Search: MiniSearch runs in the browser (no server, no AI) ----
+const fold = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const SEARCH = { mini: null, results: [], hi: -1, timer: 0 };
+
+function buildSearch() {
+  if (typeof MiniSearch === 'undefined') return;                     // library blocked or offline: the map still works
+  const mini = new MiniSearch({
+    fields: ['title', 'authors', 'themes', 'extra', 'desc', 'typeLabel'],
+    storeFields: ['ref'],
+    processTerm: t => fold(t) || null,                               // ignore case and accents
+    searchOptions: {
+      boost: { title: 3, authors: 2, themes: 2, extra: 1.5, desc: 1, typeLabel: 1 },
+      prefix: true,                                                  // "commun" finds community and commons
+      fuzzy: 0.2,                                                    // about one typo in a five-letter word
+      combineWith: 'AND',                                            // every word must match
+    },
+  });
+  mini.addAll(items().map(it => ({ id: 'r:' + it.id, ref: it.id, title: it.title, authors: it.authors, themes: it.tags.join(' '), extra: it.extra.join(' '), desc: it.desc, typeLabel: TYPE[it.type].label })));
+  SEARCH.mini = mini;
+  $('find').hidden = false;
+}
+
+function runSearch() {
+  const raw = $('q').value, q = raw.trim();
+  $('qx').hidden = !raw;
+  if (q.length < 2 || !SEARCH.mini) {                                // under two characters: behave as if nothing was typed
+    const was = state.match; SEARCH.results = []; SEARCH.hi = -1; state.q = ''; state.match = null;
+    closeResults(); if (was) render(); return;
+  }
+  const byId = new Map(items().map(it => [it.id, it]));
+  SEARCH.results = SEARCH.mini.search(q).map(h => byId.get(h.ref)).filter(Boolean).map(item => ({ kind: 'resource', item }));
+  state.q = q; state.match = new Set(SEARCH.results.map(r => r.item.id)); SEARCH.hi = SEARCH.results.length ? 0 : -1;
+  showResults(); render();
+}
+
+function showResults() {
+  const n = SEARCH.results.length;
+  $('results').hidden = false; $('q').setAttribute('aria-expanded', 'true');
+  $('rcount').textContent = n ? `${n} ${n === 1 ? 'match' : 'matches'}` : '';
+  $('rlist').innerHTML = n ? SEARCH.results.map((r, i) => {
+    const it = r.item;
+    return `<div class="res" role="option" id="res-${i}" data-i="${i}" aria-selected="false">${shapeSvg(it.type, 'var(--ink)', 6)}<span class="rt"><span class="rname">${esc(it.title)}</span><span class="rsub">resource · ${esc(TYPE[it.type].label.toLowerCase())}${it.tags[0] ? ' · ' + esc(it.tags[0].toLowerCase()) : ''}</span></span></div>`;
+  }).join('') : `<div class="rnone">Nothing matches “${esc(state.q)}” yet. Try a shorter word.</div>`;
+  highlight(SEARCH.hi, false);
+}
+function closeResults() { $('results').hidden = true; $('q').setAttribute('aria-expanded', 'false'); $('q').removeAttribute('aria-activedescendant'); }
+function highlight(i, scroll) {
+  SEARCH.hi = i;
+  $('rlist').querySelectorAll('.res').forEach(r => { const on = +r.dataset.i === i; r.classList.toggle('hi', on); r.setAttribute('aria-selected', on); if (on && scroll) r.scrollIntoView({ block: 'nearest' }); });
+  if (i >= 0) $('q').setAttribute('aria-activedescendant', 'res-' + i); else $('q').removeAttribute('aria-activedescendant');
+}
+function chooseResult(i) {
+  const r = SEARCH.results[i]; if (!r) return;
+  closeResults();
+  openPanel(r.item);
+}
+function clearSearch() { $('q').value = ''; runSearch(); }
+
+$('q').addEventListener('input', () => { clearTimeout(SEARCH.timer); SEARCH.timer = setTimeout(runSearch, 150); $('qx').hidden = !$('q').value; });
+$('q').addEventListener('focus', () => { if (state.q) showResults(); });
+$('q').addEventListener('keydown', e => {
+  const n = SEARCH.results.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!n) return; e.preventDefault();
+    if ($('results').hidden) { showResults(); return; }
+    highlight(e.key === 'ArrowDown' ? (SEARCH.hi + 1) % n : (SEARCH.hi - 1 + n) % n, true);
+  } else if (e.key === 'Enter') {
+    if (n && SEARCH.hi >= 0) { e.preventDefault(); chooseResult(SEARCH.hi); }
+  } else if (e.key === 'Escape') { clearTimeout(SEARCH.timer); clearSearch(); }
+});
+$('rlist').addEventListener('mousemove', e => { const r = e.target.closest('.res'); if (r && +r.dataset.i !== SEARCH.hi) highlight(+r.dataset.i, false); });
+$('rlist').addEventListener('click', e => { const r = e.target.closest('.res'); if (r) chooseResult(+r.dataset.i); });
+$('qx').addEventListener('click', () => { clearSearch(); $('q').focus(); });
+document.addEventListener('click', e => { if (!$('find').contains(e.target)) closeResults(); });
 
 window.addEventListener('hashchange', () => { state.view = fromHash(); render(); });
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
@@ -516,6 +623,7 @@ load().then(ok => {
   if (!ok) { $('status').textContent = 'The archive couldn’t load just now. Please try again in a moment.'; return; }
   $('status').remove();
   state.view = fromHash();
+  buildSearch();
   render();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());
 });

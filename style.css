@@ -18,6 +18,8 @@
   --c6: #b8417a;  /* rose */
   --c7: #7a5634;  /* bark */
   --c-growing: #4f8a2c;  /* young green */
+  --heat: rgb(196, 226, 160);  /* the map's glow green, also the lens when it's on */
+  --hover: #e6f0d9;            /* hover/selected fill: a pale version of the glow, visible on white */
 
   /* Type A: Mono (the old postgrowthsg.wordpress.com body face, used everywhere). Switchable in the prototype bar. */
   --f-head: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -78,7 +80,7 @@ h1 {
   display: inline-flex; align-items: center; gap: 9px; border: 1.5px solid var(--ink); background: var(--card);
   border-radius: 999px; padding: 6px 14px 6px 11px; font-size: 14px; cursor: pointer; max-width: 100%;
 }
-.chip:hover { background: #f3f5ef; }
+.chip:hover { background: var(--hover); }
 .chip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -105,8 +107,10 @@ h1 {
 .clabel .name { font-family: var(--f-body); font-size: 13px; fill: var(--ink); }
 .clabel .meta { font-family: var(--f-body); font-size: 12.5px; fill: var(--muted); }
 .clabel .more { fill: var(--brick); }
-.clabel:hover .pill, .clabel:focus-visible .pill, .clabel.hot .pill { fill: #f3f5ef; }
+.clabel:hover .pill, .clabel:focus-visible .pill, .clabel.hot .pill { fill: var(--hover); }
 .clabel:focus { outline: none; }
+/* Keyboard focus on a theme chip: the site's dashed brick ring, drawn on the chip itself (SVG has no outline) */
+.clabel:focus-visible .pill { stroke: var(--brick); stroke-width: 2.2; stroke-dasharray: 4 3; }
 .trail { fill: none; stroke: var(--trail); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 0.1 9; }
 .link { stroke: var(--ink); stroke-opacity: .32; stroke-width: 1; stroke-dasharray: 3 4; fill: none; }
 .node { cursor: pointer; }
@@ -116,6 +120,7 @@ h1 {
 .node circle.bridge { fill: none; stroke: var(--ink); stroke-opacity: .5; stroke-width: 1; stroke-dasharray: 2 2; }
 .node:hover .dot, .node:focus-visible .dot, .node.sel .dot { filter: drop-shadow(0 0 2px rgba(38,34,29,.55)); }
 .node:focus { outline: none; }
+.node:focus-visible .dot { stroke: var(--brick); stroke-width: 2.6; }
 .fade { animation: fadein .5s ease both; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
@@ -227,18 +232,23 @@ h1 {
 .searchbox input { width: 100%; font: inherit; font-size: 15px; color: var(--ink); background: var(--card); border: 1.5px solid var(--ink); border-radius: 999px; padding: 8px 40px 8px 16px; }
 .searchbox input::placeholder { color: var(--muted); }
 .qx { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; cursor: pointer; font-size: 13px; color: var(--muted); line-height: 1; }
-.qx:hover { background: #f3f5ef; color: var(--ink); }
+.qx:hover { background: var(--hover); color: var(--ink); }
 .results { position: absolute; z-index: 15; left: 0; right: 0; top: calc(100% + 6px); background: var(--card); border: 1.5px solid var(--ink); border-radius: 14px; overflow: hidden; }
 .rcount { font-size: 12.5px; color: var(--muted); padding: 11px 20px 9px; border-bottom: 1px solid var(--rule); min-height: 31px; }
 .rlist { max-height: min(52vh, 416px); overflow-y: auto; }
 .res { display: flex; gap: 14px; align-items: baseline; padding: 14px 20px; cursor: pointer; border-bottom: 1px solid var(--rule); }
 .res:last-child { border-bottom: 0; }
-.res.hi { background: #f3f5ef; }
+.res.hi { background: var(--hover); }
 .res svg.shape { flex: none; transform: translateY(2px); }
 .rt { display: grid; min-width: 0; }
 .rname { font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
 .rsub { font-size: 12.5px; color: var(--muted); }
-.rnone { padding: 14px 16px; font-size: 14px; color: var(--muted); }
+.rnone { padding: 16px 20px; font-size: 14px; color: var(--muted); display: grid; gap: 10px; }
+.rnone p { margin: 0; }
+.rnone p:first-child { color: var(--ink); }
+.rnone button { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.rnone a { color: var(--ink); text-underline-offset: 3px; }
+.rnone button:hover, .rnone a:hover { color: var(--brick); }
 .clabel.zero { opacity: .5; }
 .clabel.zero .pill { stroke: var(--muted); }
 .list li.miss { opacity: .35; }
@@ -259,11 +269,18 @@ h1 {
 
 /* Efforts (v2): the Resources | Efforts switch, and card notes inside a theme */
 .head .left { align-self: stretch; grid-template-rows: auto auto 1fr; }
-.modes { display: inline-flex; align-self: end; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
+.views { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; align-self: end; }
+.modes { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
 .modes button { font: inherit; font-size: 14px; background: var(--card); color: var(--ink); border: 0; padding: 7px 18px; cursor: pointer; }
 .modes button + button { border-left: 1.5px solid var(--ink); }
 .modes button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
-.modes button:hover:not([aria-pressed="true"]) { background: #f3f5ef; }
+.modes button:hover:not([aria-pressed="true"]) { background: var(--hover); }
+/* The Singapore & Asia lens: a separate on/off pill; when on it takes the glow green */
+.lens { display: inline-flex; align-items: center; gap: 9px; font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1.5px solid var(--ink); border-radius: 999px; padding: 7px 16px 7px 12px; cursor: pointer; }
+.lens-mark { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--ink); background: var(--card); flex: none; }
+.lens:hover { background: var(--hover); }
+.lens[aria-pressed="true"] { background: var(--heat); }
+.lens[aria-pressed="true"] .lens-mark { background: var(--ink); }
 .modes button:focus-visible { outline-offset: -5px; }
 .cardnote { margin: 0 0 18px; font-size: 13px; color: var(--muted); max-width: 52ch; }
 
@@ -278,3 +295,10 @@ h1 {
 /* v2: a Collage card with no efforts yet is a muted chip with a dashed outline */
 .clabel.empty .pill { stroke: var(--muted); stroke-dasharray: 4 3; }
 .clabel.empty .name { fill: var(--muted); }
+
+/* v3: skip link (first thing the Tab key reaches; hidden until focused) */
+.skip { position: absolute; left: 16px; top: -60px; z-index: 30; background: var(--ink); color: var(--card); padding: 9px 16px; border-radius: 999px; font-size: 14px; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+/* v3: no one-word last lines in running text */
+p, li, .note, .cardnote { text-wrap: pretty; }

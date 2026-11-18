@@ -18,15 +18,19 @@
         async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
+<a class="skip" id="skip" href="#map">Skip to the themes</a>
 <div class="wrap">
   <header class="head">
     <div class="left">
     <img class="logo" src="logo.png" alt="Post-Growth SG">
     <h1>What we’ve been reading, watching &amp; sharing</h1>
     <p class="hint" id="hint">For a better experience, view this site on a laptop.</p>
-    <div class="modes" id="modes" role="group" aria-label="Show" hidden>
-      <button type="button" id="mode-resources" aria-pressed="true">Resources</button>
-      <button type="button" id="mode-efforts" aria-pressed="false">Efforts</button>
+    <div class="views">
+      <div class="modes" id="modes" role="group" aria-label="Show" hidden>
+        <button type="button" id="mode-resources" aria-pressed="true">Resources</button>
+        <button type="button" id="mode-efforts" aria-pressed="false">Efforts</button>
+      </div>
+      <button type="button" class="lens" id="lens" aria-pressed="false" hidden><span class="lens-mark" aria-hidden="true"></span>Singapore &amp; Asia</button>
     </div>
     </div>
     <div class="right">
@@ -79,7 +83,7 @@
 <script src="snail.js"></script>
 <script>if (matchMedia('(max-width: 640px)').matches) document.getElementById('faq').removeAttribute('open');</script>
 
-<aside class="panel" id="panel" aria-label="Resource details" aria-hidden="true"></aside>
+<aside class="panel" id="panel" aria-label="Resource details" aria-hidden="true" inert></aside>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/minisearch/7.1.0/umd/index.min.js" integrity="sha384-8yIxwn98dN0YVJyq6ZD1X4cOy4NN35HB7vg+rRe4bFue0fqqUxQ0y5vB2XVQU/Xt" crossorigin="anonymous"></script>
@@ -216,8 +220,15 @@ function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; le
 
 
 const GROWING = 'Still growing';
-const MAX_CLUSTERS = 8;
-const state = { view: null, cap: 10, sel: null, q: '', match: null, mode: 'resources' };
+const MIN_PATCH = 4;        // a theme gets its own patch once it has this many items; smaller ones live in Still growing
+const MAX_CLUSTERS = 14;    // safety limit so the map stays readable as the archive grows
+// Places aren't themes: Singapore & Asia is a lens that lights up items across every theme.
+// A place tag only decides where a dot sits when the item has no other theme.
+const LENS = { label: 'Singapore & Asia', places: ['singapore', 'asia', 'southeast asia', 'south-east asia', 'sea', 'asean', 'malaysia', 'indonesia', 'thailand', 'vietnam', 'philippines', 'myanmar', 'cambodia', 'laos', 'brunei', 'timor-leste', 'china', 'hong kong', 'taiwan', 'japan', 'korea', 'south korea', 'india', 'bangladesh', 'sri lanka', 'nepal', 'pakistan'] };
+const isPlace = t => LENS.places.includes(String(t || '').trim().toLowerCase());
+const placeTags = it => { const t = it.tags.slice(0, 2), own = t.filter(x => !isPlace(x)); return own.length ? own : t; };
+const inLens = it => it.kind === 'effort' ? isPlace(it.country) : [...it.tags, ...(it.extra || [])].some(isPlace);
+const state = { view: null, cap: 10, sel: null, q: '', match: null, smatch: null, lens: false, mode: 'resources' };
 const $ = id => document.getElementById(id);
 const slug = s => s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const fmtDate = d => {
@@ -231,21 +242,24 @@ const items = () => ITEMS;
 
 
 
-// ---- Model: tags -> at most 8 clusters + Still growing, caps, bridges ----
+// ---- Model: tags -> a patch for every theme with MIN_PATCH+ items, the rest in Still growing; caps, bridges ----
 function buildModel(list, cap, match) {
   const count = new Map();
-  list.forEach(it => new Set(it.tags.slice(0, 2)).forEach(t => count.set(t, (count.get(t) || 0) + 1)));
+  list.forEach(it => new Set(placeTags(it)).forEach(t => count.set(t, (count.get(t) || 0) + 1)));
   const ranked = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(e => e[0]);
-  const overflow = ranked.length > MAX_CLUSTERS;
-  const top = new Set(overflow ? ranked.slice(0, MAX_CLUSTERS) : ranked);
+  const top = new Set(ranked.filter(t => count.get(t) >= MIN_PATCH).slice(0, MAX_CLUSTERS));
+  const folded = ranked.filter(t => !top.has(t));
+  const overflow = folded.length > 0;
   const keyOf = t => top.has(t) ? t : GROWING;
   const clusters = new Map();
   [...top, ...(overflow ? [GROWING] : [])].forEach((k, i) => clusters.set(k, {
-    key: k, members: [], folded: k === GROWING ? ranked.slice(MAX_CLUSTERS) : null,
+    key: k, members: [], folded: k === GROWING ? folded : null,
     col: k === GROWING ? 'var(--c-growing)' : `var(--c${i % 8})`,
   }));
   list.forEach(it => {
-    it.keys = [...new Set(it.tags.slice(0, 2).map(keyOf))];
+    const own = placeTags(it);
+    it.keys = [...new Set(own.map(keyOf))];
+    it.fold = own.find(t => !top.has(t)) || null;   // which small theme it belongs to, inside Still growing
     it.keys.forEach(k => clusters.get(k).members.push(it));
   });
   const visible = new Set();
@@ -443,7 +457,9 @@ function renderTop(model) {
   const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', state.mode === 'efforts' ? 'Efforts, sorted into the five PGS Collage themes, each a green glow of dots around its name' : 'Themes in the archive, each a green glow of dots around its name');
   defsFor(svg, [['g', HEAT, 1]]);
   const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
-  const gTrail = svg.append('g'), gLinks = svg.append('g'), gHit = svg.append('g'), gNodes = svg.append('g'), gLab = svg.append('g');
+  // Theme chips come before the dots in the page, so the Tab key reaches every theme first (biggest first, along the spiral).
+  // Dots keep clear of the chips, so drawing the chips underneath doesn't hide them.
+  const gTrail = svg.append('g'), gLinks = svg.append('g'), gHit = svg.append('g'), gLab = svg.append('g'), gNodes = svg.append('g');
 
   // The snail's trail: a faint dotted line from the biggest theme out to the growing tip.
   if (cl.length > 1) gTrail.append('path').attr('class', 'trail').attr('d', d3.line().curve(d3.curveCatmullRom.alpha(0.5))(cl.map(c => [c.cx, c.cy])));
@@ -454,14 +470,16 @@ function renderTop(model) {
     densityGlow(gGlow, c.cx, c.cy, c.key, c.total, maxTotal, c.key, d3.min(cl, k => k.total), hits === 0 ? 0.25 : 1);
     const deepen = on => gGlow.selectAll('.deep').classed('on', function () { return on && this.dataset.k === c.key; });
     // "Still growing" explains itself in a small pop-up on hover, instead of a note under the map.
-    const note = c.key === GROWING && c.folded ? `<b>Still growing</b><small>Themes with only a few items so far: ${c.folded.map(esc).join(', ')}. As they gather more, they become patches of their own, out at the snail’s growing tip.</small>` : null;
+    const smalls = c.key === GROWING && c.folded ? c.folded : null;
+    const note = smalls ? `<b>Still growing</b><small>${smalls.length} smaller themes, each with fewer than ${MIN_PATCH} items so far: ${smalls.map(t => esc(t.toLowerCase())).join(', ')}. When one reaches ${MIN_PATCH}, it becomes a patch of its own.</small>` : null;
     const hover = on => { deepen(on); if (note) { if (on) showNote(note, c.cx, c.cy - 16); else hideTip(); } };
     const open = () => go(c.key);
     gHit.append('circle').attr('class', 'hit').attr('cx', c.cx).attr('cy', c.cy).attr('r', c.r + 10)
       .on('click', open)
       .on('mouseenter', () => { hover(true); gLab.selectAll('.clabel').classed('hot', function () { return this.dataset.k === c.key; }); })
       .on('mouseleave', () => { hover(false); gLab.selectAll('.clabel').classed('hot', false); });
-    labelFor(gLab, c.cx, c.cy, c.key, hits === null ? `${c.total} ${c.total === 1 ? unit : unit + 's'}` : `${hits} of ${c.total}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key}, ${hits === null ? c.total + ' items' : hits + ' of ' + c.total + ' match'}`)
+    const say = hits === null ? `${c.total} ${c.total === 1 ? unit : unit + 's'}` : `${hits} of ${c.total} ${state.lens && !state.smatch ? 'about ' + LENS.label : 'match'}`;
+    labelFor(gLab, c.cx, c.cy, c.key, hits === null ? `${c.total} ${c.total === 1 ? unit : unit + 's'}` : `${hits} of ${c.total}`, c.hidden ? `+${c.hidden} more →` : '', open, `Open ${c.key.toLowerCase()}, ${say}${smalls ? '. Holds ' + smalls.length + ' smaller themes: ' + smalls.map(t => t.toLowerCase()).join(', ') : ''}`)
       .classed('zero', hits === 0)
       .on('mouseenter focus', () => hover(true)).on('mouseleave blur', () => hover(false));
   });
@@ -477,7 +495,9 @@ function renderTop(model) {
   nodeGroup(gNodes, nodes, false, null);
   mount(svg);
 
-  $('crumb').innerHTML = `<span class="counts">${model.list.length} ${state.mode === 'efforts' ? (model.list.length === 1 ? 'effort' : 'efforts') : 'resources'} · ${cl.length} themes</span>`;
+  const total = model.list.length, noun = state.mode === 'efforts' ? (total === 1 ? 'effort' : 'efforts') : 'resources';
+  const lit = state.lens ? model.list.filter(inLens).length : 0;
+  $('crumb').innerHTML = `<span class="counts">${state.lens ? `${lit} of ${total} ${noun} about ${esc(LENS.label)}` : `${total} ${noun}`} · ${cl.length} themes</span>`;
   renderStart(model);
   $('list').innerHTML = '';
   $('foot').innerHTML = '';
@@ -487,19 +507,25 @@ function renderTop(model) {
 function renderInside(model, key) {
   const c = model.clusters.get(key);
   const { W } = size();
-  const groups = TYPES.map(t => ({ t, key: t.plural, members: c.members.filter(it => it.type === t.key) })).filter(g => g.members.length);
+  // Still growing is grouped by its smaller themes (so you can see what's in it); every other theme by kind of resource.
+  const byTheme = key === GROWING && !!c.folded;
+  const groups = byTheme
+    ? c.folded.map(t => ({ t: null, key: t.toLowerCase(), members: c.members.filter(it => it.fold === t) })).filter(g => g.members.length)
+    : TYPES.map(t => ({ t, key: t.plural, members: c.members.filter(it => it.type === t.key) })).filter(g => g.members.length);
   groups.forEach(g => { g.R = Math.max(chipW(g.key) / 2 + 14, 30 + 17 * Math.sqrt(g.members.length)); });
-  let H = Math.max(460, Math.min(720, 280 + 60 * Math.sqrt(c.total)));
+  let H = byTheme
+    ? Math.max(460, Math.min(980, Math.max(280 + 60 * Math.sqrt(c.total), 200 + 52 * groups.length)))   // many small groups need more room
+    : Math.max(460, Math.min(720, 280 + 60 * Math.sqrt(c.total)));
   if (isPhone(W)) { groups.forEach(g => { g.R = 36 + 13 * Math.sqrt(g.members.length); }); H = trailLayout(groups, W); }
   else spiralLayout(groups, W, H, 70);
   const nodes = [];
   groups.forEach(g => g.members.forEach(it => nodes.push({ item: it, g, r: 7.5, tx: g.cx, ty: g.cy, spread: g.r })));
   scatter(nodes, W, H, 5, groups.map(g => chipSpot(g.cx, g.cy, g.key)));
 
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', `${key}, grouped by kind of resource`);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', byTheme ? `${key}, grouped by its smaller themes` : `${key}, grouped by kind of resource`);
   defsFor(svg, [['g', HEAT, 1]]);
   const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
-  const gNodes = svg.append('g'), gLab = svg.append('g');
+  const gLab = svg.append('g'), gNodes = svg.append('g');
   const maxKind = d3.max(groups, g => g.members.length);
   groups.forEach(g => {
     const hits = state.match ? g.members.filter(it => state.match.has(it.id)).length : null;
@@ -513,12 +539,12 @@ function renderInside(model, key) {
   $('back').onclick = () => go(null);
   $('start').innerHTML = '';
   $('start').style.height = '0px';
-  $('list').innerHTML = groups.map(g => `<section><h3>${shapeSvg(g.t.key, 'var(--ink)', 6)}${g.t.plural}</h3><ul>${
-    g.members.map(it => `<li${state.match && !state.match.has(it.id) ? ' class="miss"' : ''}><button data-id="${it.id}"><span class="t">${esc(it.title)}</span><span class="d">${fmtDate(it.date) || '–'}</span></button></li>`).join('')
+  $('list').innerHTML = groups.map(g => `<section><h3>${g.t ? shapeSvg(g.t.key, 'var(--ink)', 6) + g.t.plural : esc(g.key)}</h3><ul>${
+    g.members.map(it => `<li${state.match && !state.match.has(it.id) ? ' class="miss"' : ''}><button data-id="${esc(it.id)}"><span class="t">${byTheme ? shapeSvg(it.type, 'var(--ink)', 4.5) + ' ' : ''}${esc(it.title)}</span><span class="d">${fmtDate(it.date) || '–'}</span></button></li>`).join('')
   }</ul></section>`).join('');
   $('list').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => openPanel(model.list.find(it => it.id === b.dataset.id)));
   const bridges = c.members.filter(it => it.keys.length > 1).length;
-  $('foot').innerHTML = (c.folded ? `Themes growing here: ${c.folded.map(esc).join(', ')}. ` : '') + (bridges ? `${bridges} item${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '');
+  $('foot').innerHTML = (byTheme ? `Each of these themes gets a patch of its own on the map once it has ${MIN_PATCH} items. ` : '') + (bridges ? `${bridges} item${bridges > 1 ? 's' : ''} here also belong${bridges > 1 ? '' : 's'} to another theme.` : '');
 }
 
 // ---- Efforts: inside a big theme, grouped by Collage card ----
@@ -548,7 +574,7 @@ function renderInsideEfforts(model, key) {
   const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'fade').attr('role', 'img').attr('aria-label', `${key}: its Collage cards, with the efforts under each`);
   defsFor(svg, [['g', HEAT, 1]]);
   const gGlow = svg.append('g').style('mix-blend-mode', 'multiply');
-  const gNodes = svg.append('g'), gLab = svg.append('g');
+  const gLab = svg.append('g'), gNodes = svg.append('g');
   const maxGroup = d3.max(groups, g => g.members.length);
   groups.forEach(g => {
     const n = g.members.length, empty = n === 0;
@@ -580,6 +606,7 @@ function renderInsideEfforts(model, key) {
 }
 
 function openEffortPanel(it) {
+  hideTip();
   lastFocus = document.activeElement;
   state.sel = it.id;
   d3.selectAll('g.node').classed('sel', d => d.item.id === it.id);
@@ -600,7 +627,7 @@ function openEffortPanel(it) {
     ${it.link ? `<a class="open-link" href="${esc(it.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
     ${it.extraLinks.length ? `<div class="meta">${it.extraLinks.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(host(u))} ↗</a>`).join(' · ')}</div>` : ''}
     ${near.length ? `<h4>nearby</h4><div class="near">${near.map(o => `<button data-id="${esc(o.id)}">${shapeSvg('effort', colOf(o), 4.5)}<span>${esc(o.title)}</span></button>`).join('')}</div>` : ''}`;
-  p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
+  p.classList.add('open'); p.setAttribute('aria-hidden', 'false'); p.inert = false;
   $('px').onclick = closePanel;
   p.querySelectorAll('.near button').forEach(b => b.onclick = () => openPanel(model.list.find(o => o.id === b.dataset.id)));
   p.querySelectorAll('.tags button').forEach(b => b.onclick = () => { if (b.dataset.big) { closePanel(); go(b.dataset.big); } });
@@ -648,6 +675,7 @@ let lastFocus = null, current = null;
 function openPanel(it) {
   if (!it) return;
   if (it.kind === 'effort') return openEffortPanel(it);
+  hideTip();
   lastFocus = document.activeElement;
   state.sel = it.id;
   d3.selectAll('g.node').classed('sel', d => d.item.id === it.id);
@@ -661,25 +689,27 @@ function openPanel(it) {
     ${it.authors ? `<div class="meta">${esc(it.authors)}</div>` : ''}
     <div class="meta">${[it.date ? fmtDate(it.date) : '', it.shared_by ? 'shared by ' + esc(it.shared_by) : ''].filter(Boolean).join(' · ')}</div>
     ${it.desc ? `<p>${esc(it.desc)}</p>` : ''}
-    <div class="tags">${it.tags.map((t, i) => {
+    <div class="tags">${it.tags.map(t => {
+      if (isPlace(t)) return `<button data-lens="1" class="place" title="Light up everything about ${esc(LENS.label)}">${esc(t.toLowerCase())}</button>`;
       const k = model.clusters.has(t) ? t : GROWING;
-      return `<button data-k="${esc(k)}" class="${i < 2 ? '' : 'loose'}" title="${i < 2 ? 'Decides where this dot sits' : 'Extra tag'}">${esc(t)}</button>`;
-    }).join('')}${(it.extra || []).map(t => `<span class="extra">${esc(t)}</span>`).join('')}</div>
+      return `<button data-k="${esc(k)}" title="Open ${esc(k.toLowerCase())}">${esc(t.toLowerCase())}</button>`;
+    }).join('')}${(it.extra || []).map(t => `<span class="extra">${esc(t.toLowerCase())}</span>`).join('')}</div>
     ${it.link ? `<a class="open-link" href="${esc(it.link)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
     ${it.archive ? `<a class="archived" href="${esc(it.archive)}" target="_blank" rel="noopener">Archived copy ↗</a>` : ''}
     ${near.length ? `<h4>nearby</h4><div class="near">${near.map(o => `<button data-id="${o.id}">${shapeSvg(o.type, colOf(o), 4.5)}<span>${esc(o.title)}</span></button>`).join('')}</div>` : ''}`;
-  p.classList.add('open'); p.setAttribute('aria-hidden', 'false');
+  p.classList.add('open'); p.setAttribute('aria-hidden', 'false'); p.inert = false;
   $('px').onclick = closePanel;
   p.querySelectorAll('.near button').forEach(b => b.onclick = () => openPanel(model.list.find(o => o.id === b.dataset.id)));
-  p.querySelectorAll('.tags button').forEach(b => b.onclick = () => { closePanel(); go(b.dataset.k); });
+  p.querySelectorAll('.tags button').forEach(b => b.onclick = () => { closePanel(); if (b.dataset.lens) { setLens(true); go(null); } else go(b.dataset.k); });
   $('px').focus();
 }
+// A closed panel is inert: Tab can't land on its hidden buttons, and screen readers skip it.
 function closePanel() {
-  const p = $('panel');
-  p.classList.remove('open'); p.setAttribute('aria-hidden', 'true');
+  const p = $('panel'), was = p.classList.contains('open');
+  p.classList.remove('open'); p.setAttribute('aria-hidden', 'true'); p.inert = true;
   state.sel = null;
   d3.selectAll('g.node').classed('sel', false);
-  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  if (was && lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
@@ -712,6 +742,7 @@ function render() {
   const efforts = state.mode === 'efforts';
   current = efforts ? buildEffortModel(EFFORTS, state.cap, state.match) : buildModel(items(), state.cap, state.match);
   $('mode-resources').setAttribute('aria-pressed', String(!efforts)); $('mode-efforts').setAttribute('aria-pressed', String(efforts));
+  $('lens').setAttribute('aria-pressed', String(state.lens));
   renderLegend(current);
   updateSearchHints();
   if (state.view && current.clusters.has(state.view)) (efforts ? renderInsideEfforts : renderInside)(current, state.view);
@@ -719,6 +750,26 @@ function render() {
 }
 $('mode-resources').addEventListener('click', () => setMode('resources'));
 $('mode-efforts').addEventListener('click', () => setMode('efforts'));
+
+// ---- The Singapore & Asia lens: lights up items about the region in every theme (and works together with search) ----
+function refreshMatch() {
+  const L = state.lens ? new Set([...items(), ...EFFORTS].filter(inLens).map(it => it.id)) : null;
+  const S = state.smatch;
+  state.match = L && S ? new Set([...S].filter(id => L.has(id))) : (L || S);
+}
+function setLens(on) {
+  state.lens = on;
+  if ($('q').value.trim().length >= 2 && SEARCH.mini) runSearch();
+  else { refreshMatch(); render(); }
+}
+$('lens').addEventListener('click', () => setLens(!state.lens));
+
+// Skip link: jump straight to the first theme on the map (or the first item on a theme page).
+$('skip').addEventListener('click', e => {
+  e.preventDefault();
+  const t = document.querySelector('#map .clabel[tabindex], #map g.node, #list button');
+  if (t) t.focus();
+});
 
 // ---- Search: MiniSearch runs in the browser (no server, no AI) ----
 const fold = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -747,25 +798,41 @@ function runSearch() {
   const raw = $('q').value, q = raw.trim();
   $('qx').hidden = !raw; $('find').classList.toggle('typing', !!raw);
   if (q.length < 2 || !SEARCH.mini) {                                // under two characters: behave as if nothing was typed
-    const was = state.match; SEARCH.results = []; SEARCH.hi = -1; state.q = ''; state.match = null;
+    const was = state.smatch; SEARCH.results = []; SEARCH.hi = -1; state.q = ''; state.smatch = null; refreshMatch();
     closeResults(); if (was) render(); return;
   }
   const byId = new Map([...items(), ...EFFORTS].map(it => [it.id, it]));
-  SEARCH.results = SEARCH.mini.search(q).map(h => byId.get(h.ref)).filter(Boolean).map(item => ({ kind: item.kind === 'effort' ? 'effort' : 'resource', item }));
-  state.q = q; state.match = new Set(SEARCH.results.map(r => r.item.id)); SEARCH.hi = SEARCH.results.length ? 0 : -1;
+  const hits = SEARCH.mini.search(q).map(h => byId.get(h.ref)).filter(Boolean);
+  // With the lens on, the list only shows matches about Singapore & Asia (the map shows the same).
+  SEARCH.results = hits.filter(it => !state.lens || inLens(it)).map(item => ({ kind: item.kind === 'effort' ? 'effort' : 'resource', item }));
+  state.q = q; state.smatch = new Set(hits.map(it => it.id)); refreshMatch(); SEARCH.hi = SEARCH.results.length ? 0 : -1;
   showResults(); render();
+}
+
+// No matches: say so plainly, then offer somewhere to go: the whole archive (if the lens is on), a few big themes, or sharing.
+function noResults() {
+  const where = state.lens ? ` about ${esc(LENS.label)}` : '';
+  const themes = current ? [...current.clusters.values()].filter(c => c.key !== GROWING && c.total).sort((a, b) => b.total - a.total).slice(0, 3) : [];
+  return `<div class="rnone">
+    <p>Nothing${where} matches “${esc(state.q)}” yet.</p>
+    ${state.lens ? '<p><button type="button" data-act="lens-off">Search the whole archive instead</button></p>' : ''}
+    ${themes.length ? `<p>Or browse a theme: ${themes.map(c => `<button type="button" data-go="${esc(c.key)}">${esc(c.key.toLowerCase())}</button>`).join(' · ')}</p>` : ''}
+    <p><a href="about.html#sharing">Know something on this? Share it with us →</a></p>
+  </div>`;
 }
 
 function showResults() {
   const n = SEARCH.results.length;
   $('results').hidden = false; $('q').setAttribute('aria-expanded', 'true');
-  $('rcount').textContent = n ? `${n} ${n === 1 ? 'match' : 'matches'}` : '';
+  $('rcount').textContent = n ? `${n} ${n === 1 ? 'match' : 'matches'}${state.lens ? ' about ' + LENS.label : ''}` : '';
+  $('rcount').hidden = !n;
+  if (n) $('rlist').setAttribute('role', 'listbox'); else $('rlist').removeAttribute('role');
   $('rlist').innerHTML = n ? SEARCH.results.map((r, i) => {
     const it = r.item;
     const sub = it.kind === 'effort' ? ['effort', (it.cards[0] || '').toLowerCase(), (it.country || '').toLowerCase()].filter(Boolean).join(' · ')
       : `resource · ${TYPE[it.type].label.toLowerCase()}${it.tags[0] ? ' · ' + it.tags[0].toLowerCase() : ''}`;
     return `<div class="res" role="option" id="res-${i}" data-i="${i}" aria-selected="false">${shapeSvg(it.type, 'var(--ink)', 6)}<span class="rt"><span class="rname">${esc(it.title)}</span><span class="rsub">${esc(sub)}</span></span></div>`;
-  }).join('') : `<div class="rnone">Nothing matches “${esc(state.q)}” yet. Try a shorter word.</div>`;
+  }).join('') : noResults();
   highlight(SEARCH.hi, false);
 }
 function closeResults() { $('results').hidden = true; $('q').setAttribute('aria-expanded', 'false'); $('q').removeAttribute('aria-activedescendant'); }
@@ -796,7 +863,11 @@ $('q').addEventListener('keydown', e => {
   } else if (e.key === 'Escape') { clearTimeout(SEARCH.timer); clearSearch(); }
 });
 $('rlist').addEventListener('mousemove', e => { const r = e.target.closest('.res'); if (r && +r.dataset.i !== SEARCH.hi) highlight(+r.dataset.i, false); });
-$('rlist').addEventListener('click', e => { const r = e.target.closest('.res'); if (r) chooseResult(+r.dataset.i); });
+$('rlist').addEventListener('click', e => {
+  const r = e.target.closest('.res'); if (r) return chooseResult(+r.dataset.i);
+  const t = e.target.closest('button[data-go]'); if (t) { clearSearch(); go(t.dataset.go); return; }
+  if (e.target.closest('button[data-act="lens-off"]')) { setLens(false); $('q').focus(); }
+});
 $('qx').addEventListener('click', () => { clearSearch(); $('q').focus(); });
 document.addEventListener('click', e => { if (!$('find').contains(e.target)) closeResults(); });
 
@@ -824,6 +895,7 @@ Promise.all([load(), loadEfforts()]).then(([ok, effortsOk]) => {
   if (!ok) { $('status').textContent = 'The archive couldn’t load just now. Please try again in a moment.'; return; }
   $('status').remove();
   if (effortsOk) $('modes').hidden = false;     // no Efforts data at all: the switch stays hidden and the map is as before
+  $('lens').hidden = ![...items(), ...EFFORTS].some(inLens);
   applyHash();
   buildSearch();
   render();

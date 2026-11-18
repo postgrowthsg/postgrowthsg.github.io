@@ -65,8 +65,9 @@ const TYPE = Object.fromEntries(TYPES.map(t => [t.key, t]));
 // One green for all the heat. Each theme gets its own ink for its dots and label; the kind of resource is shown by shape.
 const HEAT = '196,226,160';
 const symbolHexagon = { draw(ctx, size) { const r = Math.sqrt(size / 2.598); for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 2; i ? ctx.lineTo(r * Math.cos(a), r * Math.sin(a)) : ctx.moveTo(r * Math.cos(a), r * Math.sin(a)); } ctx.closePath(); } };
-const SHAPES = { article: d3.symbolCircle, research: d3.symbolSquare, book: d3.symbolTriangle, podcast: d3.symbolDiamond, video: d3.symbolStar, community: d3.symbolWye, post: d3.symbolCross, zine: symbolHexagon };
-const SHAPE_SCALE = { article: 1, research: .85, book: 1.15, podcast: .9, video: 1.25, community: 1.1, post: 1, zine: 1 };
+const symbolPentagon = { draw(ctx, size) { const r = Math.sqrt(size / 2.3776); for (let i = 0; i < 5; i++) { const a = Math.PI * 2 / 5 * i - Math.PI / 2; i ? ctx.lineTo(r * Math.cos(a), r * Math.sin(a)) : ctx.moveTo(r * Math.cos(a), r * Math.sin(a)); } ctx.closePath(); } };
+const SHAPES = { article: d3.symbolCircle, research: d3.symbolSquare, book: d3.symbolTriangle, podcast: d3.symbolDiamond, video: d3.symbolStar, community: d3.symbolWye, post: d3.symbolCross, zine: symbolHexagon, effort: symbolPentagon };
+const SHAPE_SCALE = { article: 1, research: .85, book: 1.15, podcast: .9, video: 1.25, community: 1.1, post: 1, zine: 1, effort: 1.05 };
 const symbolPath = (type, r) => d3.symbol(SHAPES[type], Math.PI * r * r * SHAPE_SCALE[type])();
 const shapeSvg = (type, col, r = 5) => `<svg class="shape" width="${r * 2 + 4}" height="${r * 2 + 4}" viewBox="${-r - 2} ${-r - 2} ${r * 2 + 4} ${r * 2 + 4}" aria-hidden="true"><path d="${symbolPath(type, r)}" fill="${col}"/></svg>`;
 const colOf = () => 'var(--ink)';

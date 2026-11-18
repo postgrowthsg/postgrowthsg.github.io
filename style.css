@@ -202,3 +202,20 @@ h1 {
   .legend { font-size: 12px; gap: 4px 12px; }
   .wrap { gap: 16px; }
 }
+
+/* About page extras (v2): type list with shape icons, small notes, text still to write */
+.about-page .aside-note { font-size: 13px; color: var(--muted); }
+.about-page em { font-style: normal; font-weight: 500; }
+.about-page .todo { color: var(--brick); }
+.about-page svg.shape { fill: var(--ink); transform: translateY(3px); }
+.about-page ul.types { list-style: none; margin: 0; padding: 0; display: grid; }
+.about-page ul.types li { display: grid; grid-template-columns: 22px 11.5rem minmax(0, 1fr); gap: 2px 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.about-page ul.types li:first-child { border-top: 1px solid var(--rule); }
+.about-page ul.types .t { font-weight: 500; }
+.about-page ul.types .e { color: var(--muted); font-size: 14px; }
+.about-page p.effort { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 14px; align-items: baseline; }
+.about-page ul.links { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+@media (max-width: 560px) {
+  .about-page ul.types li { grid-template-columns: 22px minmax(0, 1fr); }
+  .about-page ul.types .e { grid-column: 2; }
+}

@@ -84,7 +84,7 @@ h1 {
 .chip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.bar { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-end; justify-content: space-between; }
+.bar { display: grid; gap: 20px; justify-items: start; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 26px; font-size: 13.5px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
@@ -192,7 +192,7 @@ h1 {
 .head .nav a { color: var(--muted); font-size: 14px; font-weight: 500; text-decoration: underline; text-underline-offset: 4px; }
 .head .nav a:hover { color: var(--ink); }
 .about-page { max-width: 62ch; display: grid; gap: 22px; padding-block: 8px 48px; }
-.about-page h2 { margin: 32px 0 0; font-size: 14px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.about-page h2 { margin: 36px 0 0; font-size: 14.5px; font-weight: 700; color: var(--ink); text-transform: uppercase; letter-spacing: .08em; }
 .about-page p { margin: 0; line-height: 1.7; }
 .about-page a { color: var(--ink); }
 @media (max-width: 760px) { .head .nav { justify-self: start; padding-top: 0; } }
@@ -268,7 +268,8 @@ h1 {
 @media (max-width: 760px) { .head .right { align-self: auto; } .head .right .nav { align-self: flex-start; } }
 
 /* Efforts (v2): the Resources | Efforts switch, and card notes inside a theme */
-.head .left { align-self: stretch; grid-template-rows: auto auto 1fr; }
+.head-home .left { align-self: stretch; grid-template-rows: auto auto 1fr; }
+.head-page .left { gap: 56px; }   /* the About page: more room between the logo and its heading */
 .views { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; align-self: end; }
 .modes { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 999px; overflow: hidden; }
 .modes button { font: inherit; font-size: 14px; background: var(--card); color: var(--ink); border: 0; padding: 7px 18px; cursor: pointer; }

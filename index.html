@@ -23,6 +23,7 @@
     <div class="left">
     <img class="logo" src="logo.png" alt="Post-Growth SG">
     <h1>What we’ve been reading, watching &amp; sharing</h1>
+    <p class="hint" id="hint">For a better experience, view this site on a laptop.</p>
     <div class="modes" id="modes" role="group" aria-label="Show" hidden>
       <button type="button" id="mode-resources" aria-pressed="true">Resources</button>
       <button type="button" id="mode-efforts" aria-pressed="false">Efforts</button>
@@ -51,6 +52,7 @@
             <div class="rlist" id="rlist" role="listbox" aria-label="Search results"></div>
           </div>
         </div>
+        <p class="try" id="try" hidden></p>
       </div>
       </div>
     </div>
@@ -700,6 +702,7 @@ function render() {
   current = efforts ? buildEffortModel(EFFORTS, state.cap, state.match) : buildModel(items(), state.cap, state.match);
   $('mode-resources').setAttribute('aria-pressed', String(!efforts)); $('mode-efforts').setAttribute('aria-pressed', String(efforts));
   renderLegend(current);
+  updateSearchHints();
   if (state.view && current.clusters.has(state.view)) (efforts ? renderInsideEfforts : renderInside)(current, state.view);
   else { state.view = null; renderTop(current); }
 }
@@ -731,7 +734,7 @@ function buildSearch() {
 
 function runSearch() {
   const raw = $('q').value, q = raw.trim();
-  $('qx').hidden = !raw;
+  $('qx').hidden = !raw; $('find').classList.toggle('typing', !!raw);
   if (q.length < 2 || !SEARCH.mini) {                                // under two characters: behave as if nothing was typed
     const was = state.match; SEARCH.results = []; SEARCH.hi = -1; state.q = ''; state.match = null;
     closeResults(); if (was) render(); return;
@@ -769,7 +772,7 @@ function chooseResult(i) {
 }
 function clearSearch() { $('q').value = ''; runSearch(); }
 
-$('q').addEventListener('input', () => { clearTimeout(SEARCH.timer); SEARCH.timer = setTimeout(runSearch, 150); $('qx').hidden = !$('q').value; });
+$('q').addEventListener('input', () => { clearTimeout(SEARCH.timer); SEARCH.timer = setTimeout(runSearch, 150); $('qx').hidden = !$('q').value; $('find').classList.toggle('typing', !!$('q').value); });
 $('q').addEventListener('focus', () => { if (state.q) showResults(); });
 $('q').addEventListener('keydown', e => {
   const n = SEARCH.results.length;
@@ -785,6 +788,23 @@ $('rlist').addEventListener('mousemove', e => { const r = e.target.closest('.res
 $('rlist').addEventListener('click', e => { const r = e.target.closest('.res'); if (r) chooseResult(+r.dataset.i); });
 $('qx').addEventListener('click', () => { clearSearch(); $('q').focus(); });
 document.addEventListener('click', e => { if (!$('find').contains(e.target)) closeResults(); });
+
+// What to search for: the box says what it covers, and a few examples (checked against the data, so each one finds something).
+const TRY = { resources: ['degrowth', 'wellbeing', 'singapore', 'housing', 'podcast', 'cities'], efforts: ['singapore', 'circular', 'sharing', 'eu', 'repair', 'finance'] };
+function updateSearchHints() {
+  const efforts = state.mode === 'efforts';
+  $('q').placeholder = efforts ? 'Search names, cards, countries…' : 'Search titles, authors, themes…';
+  if (!SEARCH.mini || SEARCH.hintMode === state.mode) return;
+  SEARCH.hintMode = state.mode;
+  const prefix = efforts ? 'x:' : 'r:';
+  const picks = TRY[state.mode].filter(w => SEARCH.mini.search(w).some(h => h.id.startsWith(prefix))).slice(0, 3);
+  $('try').innerHTML = picks.length ? 'Try: ' + picks.map(w => `<button type="button" data-w="${esc(w)}">${esc(w)}</button>`).join(' · ') : '';
+  $('try').hidden = !picks.length;
+}
+$('try').addEventListener('click', e => {
+  const b = e.target.closest('button[data-w]'); if (!b) return;
+  $('q').value = b.dataset.w; clearTimeout(SEARCH.timer); runSearch(); $('q').focus();
+});
 
 window.addEventListener('hashchange', () => { applyHash(); render(); });
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });

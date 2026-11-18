@@ -95,6 +95,7 @@ function typeKey(t) {
   const k = String(t || '').trim().toLowerCase();
   if (TYPE[k]) return k;
   if (k.startsWith('zine') || k.includes('own writing')) return 'zine';
+  if (k.startsWith('community')) return 'community';   // the Sheet says “community resource”
   return 'article';
 }
 /** Sheet rows → resources. Only live rows with a title and a first theme are shown. */
